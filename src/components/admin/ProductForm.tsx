@@ -7,7 +7,7 @@
 
 import { useState, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
-import { uploadProductImage } from '@/lib/uploadImage'
+import { uploadProductImages, deleteProductImage } from '@/lib/uploadImage'
 import toast from 'react-hot-toast'
 
 type Props = {
@@ -16,10 +16,23 @@ type Props = {
   editProduct?: any
 }
 
+const MIN_PHOTOS = 1
+const MAX_PHOTOS = 8
+
+// Foto yang sudah tersimpan di database (URL string) digabung dengan
+// foto baru yang baru dipilih user (File, belum diupload) dalam satu list
+// supaya urutan tampil di form sama persis dengan urutan disimpan.
+type GalleryItem = { url: string; file?: File }
+
 export function ProductForm({ categories, onSuccess, editProduct }: Props) {
   const [loading, setLoading] = useState(false)
-  const [imageFile, setImageFile] = useState<File | null>(null)
-  const [imagePreview, setImagePreview] = useState<string>(editProduct?.image_url || '')
+
+  const initialGallery: GalleryItem[] = (() => {
+    if (editProduct?.images?.length) return editProduct.images.map((url: string) => ({ url }))
+    if (editProduct?.image_url) return [{ url: editProduct.image_url }]
+    return []
+  })()
+  const [gallery, setGallery] = useState<GalleryItem[]>(initialGallery)
   const fileRef = useRef<HTMLInputElement>(null)
 
   const [form, setForm] = useState({
@@ -37,10 +50,32 @@ export function ProductForm({ categories, onSuccess, editProduct }: Props) {
   })
 
   function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
-    setImageFile(file)
-    setImagePreview(URL.createObjectURL(file))
+    const files = Array.from(e.target.files || [])
+    if (files.length === 0) return
+
+    const remainingSlots = MAX_PHOTOS - gallery.length
+    if (remainingSlots <= 0) {
+      toast.error(`Maksimal ${MAX_PHOTOS} foto per produk`)
+      e.target.value = ''
+      return
+    }
+    const accepted = files.slice(0, remainingSlots)
+    if (files.length > remainingSlots) {
+      toast.error(`Hanya ${remainingSlots} foto ditambahkan (maksimal ${MAX_PHOTOS} total)`)
+    }
+
+    const newItems: GalleryItem[] = accepted.map(file => ({ url: URL.createObjectURL(file), file }))
+    setGallery(prev => [...prev, ...newItems])
+    e.target.value = '' // supaya bisa pilih file yang sama lagi kalau perlu
+  }
+
+  async function removeImage(index: number) {
+    const item = gallery[index]
+    setGallery(prev => prev.filter((_, i) => i !== index))
+    // Kalau foto ini sudah tersimpan di storage (bukan file baru), hapus dari storage juga
+    if (!item.file) {
+      deleteProductImage(item.url).catch(() => {})
+    }
   }
 
   function generateSlug(name: string) {
@@ -57,21 +92,29 @@ export function ProductForm({ categories, onSuccess, editProduct }: Props) {
       toast.error('Nama dan harga wajib diisi')
       return
     }
+    if (gallery.length < MIN_PHOTOS) {
+      toast.error('Tambahkan minimal 1 foto produk')
+      return
+    }
 
     setLoading(true)
     try {
-      let imageUrl = editProduct?.image_url || null
+      const slug = form.slug || generateSlug(form.name)
 
-      // Upload foto jika ada
-      if (imageFile) {
-        const slug = form.slug || generateSlug(form.name)
-        imageUrl = await uploadProductImage(imageFile, slug)
-        if (!imageUrl) throw new Error('Gagal upload foto')
+      // Upload semua foto baru (yang masih berupa File), sambil tetap
+      // mempertahankan urutan tampil di form
+      const newFiles = gallery.filter(g => g.file).map(g => g.file!) as File[]
+      const uploadedUrls = newFiles.length ? await uploadProductImages(newFiles, slug) : []
+      if (newFiles.length && uploadedUrls.length !== newFiles.length) {
+        throw new Error('Sebagian foto gagal diupload, coba lagi')
       }
+
+      let uploadIdx = 0
+      const finalImages = gallery.map(g => (g.file ? uploadedUrls[uploadIdx++] : g.url))
 
       const productData = {
         name: form.name,
-        slug: form.slug || generateSlug(form.name),
+        slug,
         description: form.description,
         price: parseInt(form.price.toString()),
         original_price: parseInt(form.original_price.toString()) || 0,
@@ -81,7 +124,8 @@ export function ProductForm({ categories, onSuccess, editProduct }: Props) {
         sizes: form.sizes.split(',').map((s: string) => s.trim()),
         is_new: form.is_new,
         is_active: form.is_active,
-        image_url: imageUrl,
+        images: finalImages,
+        image_url: finalImages[0], // foto pertama tetap dipakai sbg thumbnail/cover
         updated_at: new Date().toISOString(),
       }
 
@@ -109,39 +153,57 @@ export function ProductForm({ categories, onSuccess, editProduct }: Props) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      {/* Upload Foto */}
+      {/* Upload Foto (galeri 1-8 foto) */}
       <div>
-        <label className="block text-sm font-medium mb-1">Foto Produk</label>
-        <div
-          onClick={() => fileRef.current?.click()}
-          className="border-2 border-dashed border-gray-200 rounded-lg p-6 text-center cursor-pointer hover:border-green-400 hover:bg-green-50 transition-colors"
-        >
-          {imagePreview ? (
-            <img src={imagePreview} alt="Preview" className="w-full h-32 object-cover rounded-lg" />
-          ) : (
-            <>
-              <div className="text-3xl mb-2">📷</div>
-              <p className="text-sm text-gray-500">Ketuk untuk upload foto produk</p>
-              <p className="text-xs text-gray-400 mt-1">JPG, PNG, WEBP (maks 5MB)</p>
-            </>
+        <div className="flex items-center justify-between mb-1">
+          <label className="block text-sm font-medium">Foto Produk *</label>
+          <span className="text-xs text-gray-400">{gallery.length}/{MAX_PHOTOS} foto</span>
+        </div>
+        <p className="text-xs text-gray-400 mb-2">
+          Tambahkan 3-8 foto (min. {MIN_PHOTOS}) agar pembeli bisa lihat detail strap dari berbagai sisi. Foto pertama jadi foto sampul.
+        </p>
+
+        <div className="grid grid-cols-4 gap-2 mb-2">
+          {gallery.map((item, idx) => (
+            <div key={idx} className="relative aspect-square rounded-lg overflow-hidden border border-gray-200 group">
+              <img src={item.url} alt={`Foto ${idx + 1}`} className="w-full h-full object-cover" />
+              {idx === 0 && (
+                <span className="absolute top-0.5 left-0.5 bg-[#4a6650] text-white text-[8px] font-bold px-1 py-0.5 rounded">
+                  SAMPUL
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => removeImage(idx)}
+                className="absolute top-0.5 right-0.5 w-5 h-5 bg-black/60 text-white text-[10px] rounded-full flex items-center justify-center"
+                aria-label="Hapus foto"
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+
+          {gallery.length < MAX_PHOTOS && (
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              className="aspect-square rounded-lg border-2 border-dashed border-gray-200 flex flex-col items-center justify-center text-gray-400 hover:border-green-400 hover:bg-green-50 transition-colors"
+            >
+              <span className="text-xl">📷</span>
+              <span className="text-[10px] mt-0.5">Tambah</span>
+            </button>
           )}
         </div>
+
         <input
           ref={fileRef}
           type="file"
           accept="image/*"
+          multiple
           onChange={handleImageChange}
           className="hidden"
         />
-        {imagePreview && (
-          <button
-            type="button"
-            onClick={() => { setImagePreview(''); setImageFile(null) }}
-            className="mt-1 text-xs text-red-500"
-          >
-            Hapus foto
-          </button>
-        )}
+        <p className="text-xs text-gray-400">JPG, PNG, WEBP (maks 5MB per foto). Ketuk foto pertama jadi sampul — hapus lalu unggah ulang untuk mengubah urutan.</p>
       </div>
 
       {/* Nama */}

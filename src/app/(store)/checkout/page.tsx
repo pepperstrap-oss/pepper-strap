@@ -11,6 +11,7 @@ import { useCartStore } from '@/store/cartStore'
 import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/lib/supabase'
 import toast from 'react-hot-toast'
+import type { Address } from '@/types'
 
 export default function CheckoutPage() {
   const router = useRouter()
@@ -19,6 +20,9 @@ export default function CheckoutPage() {
   const [shipping, setShipping] = useState<any>(null)
   const [loading, setLoading] = useState(false)
   const [snapReady, setSnapReady] = useState(false)
+  const [savedAddresses, setSavedAddresses] = useState<Address[]>([])
+  const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null)
+  const [saveNewAddress, setSaveNewAddress] = useState(false)
   const [form, setForm] = useState({
     recipient_name: '',
     email: '',
@@ -43,6 +47,34 @@ export default function CheckoutPage() {
       postal_code: parsedShipping.zipCode || f.postal_code,
     }))
   }, [user, profile])
+
+  // Ambil daftar alamat tersimpan untuk pelanggan yang sudah login
+  useEffect(() => {
+    if (!user) { setSavedAddresses([]); return }
+    supabase.from('addresses').select('*').eq('user_id', user.id)
+      .order('is_default', { ascending: false }).order('created_at', { ascending: false })
+      .then(({ data }) => {
+        setSavedAddresses(data || [])
+        const def = (data || []).find(a => a.is_default) || (data || [])[0]
+        if (def) applyAddress(def)
+      })
+  }, [user])
+
+  function applyAddress(a: Address) {
+    setSelectedAddressId(a.id)
+    setForm(f => ({
+      ...f,
+      recipient_name: a.recipient_name,
+      phone: a.phone,
+      street: a.street,
+      postal_code: a.postal_code,
+    }))
+  }
+
+  function useNewAddress() {
+    setSelectedAddressId(null)
+    setForm(f => ({ ...f, recipient_name: profile?.full_name || '', phone: profile?.phone || '', street: '', postal_code: shipping?.zipCode || '' }))
+  }
 
   async function handleOrder() {
     if (!form.recipient_name || !form.phone || !form.street || !form.postal_code) {
@@ -97,6 +129,23 @@ export default function CheckoutPage() {
       const { data: order, error: orderError } = await supabase.from('orders').insert(orderPayload).select().single()
 
       if (orderError) throw orderError
+
+      // Simpan alamat baru ke buku alamat jika pengguna login, memilih entri manual,
+      // dan mencentang opsi "simpan alamat"
+      if (!isGuest && !selectedAddressId && saveNewAddress) {
+        supabase.from('addresses').insert({
+          user_id: user!.id,
+          label: 'Rumah',
+          recipient_name: form.recipient_name,
+          phone: form.phone,
+          street: form.street,
+          city: shipping.cityName,
+          province: shipping.province,
+          province_id: shipping.destinationId?.toString() || '',
+          postal_code: form.postal_code || shipping.zipCode || '',
+          is_default: savedAddresses.length === 0,
+        }).then(({ error }) => { if (error) console.error('Gagal simpan alamat:', error) })
+      }
 
       // Simpan order items
       await supabase.from('order_items').insert(
@@ -176,6 +225,42 @@ export default function CheckoutPage() {
           </div>
         )}
 
+        {/* Alamat Tersimpan */}
+        {!isGuest && savedAddresses.length > 0 && (
+          <div className="bg-white rounded-xl border border-gray-100 p-3.5">
+            <div className="flex items-center justify-between mb-2.5">
+              <div className="text-[13px] font-semibold text-[#4a6650]">📍 Pilih Alamat Tersimpan</div>
+              <button onClick={() => router.push('/akun/alamat')} className="text-[11px] text-[#4a6650] underline">Kelola</button>
+            </div>
+            <div className="space-y-2">
+              {savedAddresses.map(a => (
+                <div
+                  key={a.id}
+                  onClick={() => applyAddress(a)}
+                  className={`p-2.5 rounded-lg border cursor-pointer transition-colors ${
+                    selectedAddressId === a.id ? 'border-[#4a6650] bg-[#e8f0e9]' : 'border-gray-200'
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[11px] font-bold text-gray-800">{a.label}</span>
+                    {a.is_default && <span className="text-[9px] bg-white text-[#4a6650] px-1.5 py-0.5 rounded">Utama</span>}
+                  </div>
+                  <div className="text-[11px] text-gray-600 mt-0.5">{a.recipient_name} · {a.phone}</div>
+                  <div className="text-[10px] text-gray-400 mt-0.5">{a.street}, {a.city}</div>
+                </div>
+              ))}
+              <button
+                onClick={useNewAddress}
+                className={`w-full p-2.5 rounded-lg border text-[11px] text-center transition-colors ${
+                  selectedAddressId === null ? 'border-[#4a6650] bg-[#e8f0e9] text-[#4a6650] font-semibold' : 'border-dashed border-gray-300 text-gray-500'
+                }`}
+              >
+                + Gunakan alamat lain
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Alamat */}
         <div className="bg-white rounded-xl border border-gray-100 p-3.5">
           <div className="text-[13px] font-semibold text-[#4a6650] mb-3">📍 Data Pemesan & Alamat Pengiriman</div>
@@ -200,6 +285,17 @@ export default function CheckoutPage() {
           <div className="bg-[#e8f0e9] rounded-lg px-3 py-2 text-[11px] text-[#4a6650]">
             📍 {shipping.cityName}, {shipping.province}
           </div>
+
+          {!isGuest && selectedAddressId === null && (
+            <label className="flex items-center gap-2 text-[11px] text-gray-600 mt-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={saveNewAddress}
+                onChange={e => setSaveNewAddress(e.target.checked)}
+              />
+              Simpan alamat ini untuk pembelian berikutnya
+            </label>
+          )}
         </div>
 
         {/* Pengiriman */}

@@ -16,6 +16,10 @@ export function ProductDetailClient({ product: p }: { product: Product }) {
   const [qty, setQty] = useState(1)
   const fmt = (n: number) => 'Rp ' + n.toLocaleString('id-ID')
 
+  // Dukung produk lama yang cuma punya image_url (belum ada array images)
+  const photos = p.images?.length ? p.images : (p.image_url ? [p.image_url] : [])
+  const [activePhoto, setActivePhoto] = useState(0)
+
   function handleAddCart() {
     addItem(p, qty, selectedSize)
     toast.success('Ditambahkan ke keranjang!')
@@ -34,13 +38,35 @@ export function ProductDetailClient({ product: p }: { product: Product }) {
         <span className="text-white font-semibold text-sm">Detail Produk</span>
       </div>
 
-      {/* Foto produk */}
-      <div className="h-56 bg-[#e8f0e9] flex items-center justify-center overflow-hidden">
-        {p.image_url
-          ? <img src={p.image_url} alt={p.name} className="w-full h-full object-cover" />
+      {/* Foto produk (galeri) */}
+      <div className="h-72 bg-[#e8f0e9] flex items-center justify-center overflow-hidden relative">
+        {photos.length > 0
+          ? <img src={photos[activePhoto]} alt={p.name} className="w-full h-full object-cover" />
           : <span className="text-7xl">📦</span>
         }
+        {photos.length > 1 && (
+          <span className="absolute bottom-2 right-2 bg-black/50 text-white text-[10px] font-semibold px-2 py-0.5 rounded-full">
+            {activePhoto + 1}/{photos.length}
+          </span>
+        )}
       </div>
+
+      {/* Thumbnail galeri */}
+      {photos.length > 1 && (
+        <div className="flex gap-2 px-4 pt-3 overflow-x-auto">
+          {photos.map((url, idx) => (
+            <button
+              key={idx}
+              onClick={() => setActivePhoto(idx)}
+              className={`w-14 h-14 flex-shrink-0 rounded-lg overflow-hidden border-2 transition-colors ${
+                activePhoto === idx ? 'border-[#4a6650]' : 'border-transparent'
+              }`}
+            >
+              <img src={url} alt={`${p.name} foto ${idx + 1}`} className="w-full h-full object-cover" />
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="p-4">
         <h1 className="text-lg font-bold text-gray-900 mb-1">{p.name}</h1>

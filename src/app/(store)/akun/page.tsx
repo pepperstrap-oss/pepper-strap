@@ -57,6 +57,7 @@ export default function AccountPage() {
       <div className="m-3 bg-white rounded-xl border border-gray-100 overflow-hidden">
         {[
           { href: '/akun/pesanan', icon: '📦', label: 'Pesanan Saya' },
+          { href: '/akun/alamat', icon: '📍', label: 'Alamat Tersimpan' },
         ].map(item => (
           <Link key={item.href} href={item.href}
             className="flex items-center gap-3 px-4 py-3.5 border-b border-gray-50 text-[13px] text-gray-700">
