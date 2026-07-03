@@ -3,6 +3,11 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  /* Situs ini didesain dengan tema terang secara tetap (hijau/off-white).
+     color-scheme: light mencegah browser (terutama Chrome Android) memaksakan
+     mode gelap otomatis pada elemen form, yang sebelumnya membuat tulisan
+     di kolom input jadi tidak terlihat (putih di atas putih). */
+  color-scheme: light;
 }
 
 @theme inline {
@@ -12,15 +17,22 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Jaring pengaman tambahan: pastikan semua kolom input/textarea/select
+   selalu memakai teks gelap di atas latar terang, apapun tema perangkat/browser. */
+input,
+textarea,
+select {
+  color: #171717;
+  background-color: #ffffff;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #9ca3af;
 }
