@@ -37,3 +37,12 @@ export async function deleteProductImage(imageUrl: string): Promise<void> {
 
   await supabase.storage.from('product-images').remove([path])
 }
+
+// Upload beberapa foto sekaligus untuk satu produk (galeri foto detail, 1-9 foto).
+// Mengembalikan array URL publik sesuai urutan file yang berhasil diupload.
+export async function uploadProductImages(files: File[], productSlug: string): Promise<string[]> {
+  const results = await Promise.all(
+    files.map((file, idx) => uploadProductImage(file, `${productSlug}-${idx}`))
+  )
+  return results.filter((url): url is string => !!url)
+}
