@@ -118,14 +118,26 @@ export default async function HomePage() {
         <div className="grid grid-cols-2 gap-4 border-t border-white/20 pt-4 mb-4 text-[11px]">
           <div>
             <div className="font-bold mb-2">Menu</div>
-            {['Beranda', 'Produk', 'Promo', 'Tentang Kami', 'Kontak'].map(m => (
-              <div key={m} className="text-white/70 mb-1">{m}</div>
+            {[
+              { label: 'Beranda', href: '/' },
+              { label: 'Produk', href: '/produk' },
+              { label: 'Promo', href: '/promo' },
+              { label: 'Tentang Kami', href: '/tentang' },
+              { label: 'Kontak', href: '/kontak' },
+            ].map(m => (
+              <Link key={m.label} href={m.href} className="block text-white/70 mb-1 active:text-white">{m.label}</Link>
             ))}
           </div>
           <div>
             <div className="font-bold mb-2">Informasi</div>
-            {['Cara Belanja', 'Pengiriman', 'Pembayaran', 'FAQ', 'Kebijakan Privasi'].map(m => (
-              <div key={m} className="text-white/70 mb-1">{m}</div>
+            {[
+              { label: 'Cara Belanja', href: '/cara-belanja' },
+              { label: 'Pengiriman', href: '/pengiriman' },
+              { label: 'Pembayaran', href: '/pembayaran' },
+              { label: 'FAQ', href: '/faq' },
+              { label: 'Kebijakan Privasi', href: '/kebijakan-privasi' },
+            ].map(m => (
+              <Link key={m.label} href={m.href} className="block text-white/70 mb-1 active:text-white">{m.label}</Link>
             ))}
           </div>
         </div>
