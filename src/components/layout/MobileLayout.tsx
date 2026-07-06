@@ -27,8 +27,8 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
       {/* Top Navbar */}
       <header className="bg-[#4a6650] px-4 py-3 flex items-center justify-between sticky top-0 z-50">
         <Link href="/" className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-white rounded-full flex items-center justify-center">
-            <span className="text-[#4a6650] font-bold text-sm">P</span>
+          <div className="w-8 h-8 rounded-full overflow-hidden bg-white flex items-center justify-center">
+            <img src="/logo-pepper.jpg" alt="Pepper Strap" className="w-full h-full object-cover" />
           </div>
           <span className="text-white font-bold text-sm tracking-wide">PEPPER STRAP</span>
         </Link>

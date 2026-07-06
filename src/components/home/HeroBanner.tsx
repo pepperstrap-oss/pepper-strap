@@ -18,15 +18,9 @@ export function HeroBanner({ title, subtitle, themeColor, imageUrl }: {
         <h1 className="text-white text-xl font-bold leading-tight mb-2 whitespace-pre-line">
           {title || 'Handmade Leather\nWatch Strap'}
         </h1>
-        <p className="text-white/85 text-[12px] leading-relaxed mb-4">
+        <p className="text-white/85 text-[12px] leading-relaxed">
           {subtitle || 'Strap kulit premium buatan tangan untuk gaya yang tak lekang oleh waktu.'}
         </p>
-        <button
-          onClick={() => window.location.href = '/produk'}
-          className="bg-white text-[#4a6650] font-bold text-[13px] px-5 py-2 rounded-md"
-        >
-          Belanja Sekarang
-        </button>
       </div>
     </div>
   )
