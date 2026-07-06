@@ -20,9 +20,9 @@ export function ProductCard({ product: p }: { product: Product }) {
 
   return (
     <Link href={`/produk/${p.slug}`} className="bg-white rounded-xl border border-gray-100 overflow-hidden block relative">
-      <div className="relative h-[90px] bg-[#e8f0e9] flex items-center justify-center overflow-hidden">
+      <div className="relative aspect-square bg-[#e8f0e9] flex items-center justify-center overflow-hidden">
         {p.image_url
-          ? <img src={p.image_url} alt={p.name} className="w-full h-full object-cover" />
+          ? <img src={p.image_url} alt={p.name} className="w-full h-full object-contain" />
           : <span className="text-4xl">📦</span>
         }
         {p.is_new && (
