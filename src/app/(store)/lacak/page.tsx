@@ -7,6 +7,7 @@ import { useState, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { MobileLayout } from '@/components/layout/MobileLayout'
+import { OrderTimeline } from '@/components/order/OrderTimeline'
 
 const STATUS_INFO: Record<string, { label: string; icon: string; color: string; desc: string }> = {
   pending:    { label: 'Menunggu Pembayaran', icon: '⏳', color: 'text-yellow-600', desc: 'Pesanan menunggu konfirmasi pembayaran.' },
@@ -134,6 +135,14 @@ function LacakContent() {
                 </div>
               </div>
             </div>
+
+            {/* Timeline visual — hanya tampil kalau status bukan 'cancelled' */}
+            <OrderTimeline
+              status={order.status}
+              orderDate={order.created_at}
+              trackingNumber={order.tracking_number}
+              courier={order.courier ? `${order.courier} ${order.courier_service || ''}`.trim() : undefined}
+            />
 
             {/* Resi pengiriman */}
             {order.tracking_number && (
