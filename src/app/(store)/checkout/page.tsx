@@ -1,6 +1,6 @@
 // =============================================
 // src/app/(store)/checkout/page.tsx
-// Halaman Checkout + Alamat + Midtrans
+// Halaman Checkout + Alamat + Midtrans + Kode Promo
 // Mendukung checkout dengan akun ATAU sebagai tamu (guest checkout)
 // =============================================
 'use client'
@@ -17,6 +17,7 @@ export default function CheckoutPage() {
   const { items, total, clearCart } = useCartStore()
   const { user, profile } = useAuthStore()
   const [shipping, setShipping] = useState<any>(null)
+  const [promo, setPromo] = useState<any>(null) // { id, code, discount_amount, free_shipping } atau null
   const [loading, setLoading] = useState(false)
   const [snapReady, setSnapReady] = useState(false)
   const [form, setForm] = useState({
@@ -35,6 +36,12 @@ export default function CheckoutPage() {
     if (!saved) { router.push('/keranjang'); return }
     const parsedShipping = JSON.parse(saved)
     setShipping(parsedShipping)
+
+    const savedPromo = sessionStorage.getItem('checkout_promo')
+    if (savedPromo) {
+      try { setPromo(JSON.parse(savedPromo)) } catch { setPromo(null) }
+    }
+
     setForm(f => ({
       ...f,
       recipient_name: profile?.full_name || '',
@@ -69,8 +76,9 @@ export default function CheckoutPage() {
         postal_code: form.postal_code || shipping.zipCode || '',
       }
       const subtotal = total()
-      const shippingCost = shipping.ongkir?.cost || 0
-      const grandTotal = subtotal + shippingCost
+      const discountAmount = promo?.discount_amount || 0
+      const shippingCost = promo?.free_shipping ? 0 : (shipping.ongkir?.cost || 0)
+      const grandTotal = Math.max(0, subtotal - discountAmount + shippingCost)
       const customerEmail = isGuest ? form.email : user!.email
 
       // Simpan order ke Supabase — user_id diisi jika login, atau kosong (tamu) dengan data kontak guest_*
@@ -85,6 +93,8 @@ export default function CheckoutPage() {
         notes: form.notes,
         status: 'pending',
         payment_status: 'unpaid',
+        promo_code: promo?.code || null,
+        discount_amount: discountAmount,
       }
       if (isGuest) {
         orderPayload.guest_name = form.recipient_name
@@ -112,6 +122,11 @@ export default function CheckoutPage() {
         }))
       )
 
+      // Tambah pemakaian kode promo (kalau ada yang dipakai)
+      if (promo?.id) {
+        await supabase.rpc('increment_promo_usage', { p_promo_id: promo.id })
+      }
+
       // Buat token Midtrans
       const payRes = await fetch('/api/midtrans/create-transaction', {
         method: 'POST',
@@ -121,6 +136,7 @@ export default function CheckoutPage() {
           items: items.map(i => ({ product_id: i.product.id, name: i.product.name, size: i.size, price: i.product.price, quantity: i.quantity })),
           customer: { name: form.recipient_name, email: customerEmail, phone: form.phone, address: shippingAddress },
           shippingCost,
+          discountAmount,
         }),
       })
 
@@ -130,8 +146,8 @@ export default function CheckoutPage() {
       // Buka Midtrans Snap
       // @ts-ignore
       window.snap.pay(payData.token, {
-        onSuccess: () => { clearCart(); sessionStorage.removeItem('checkout_shipping'); router.push(`/sukses?order=${order.order_number}`) },
-        onPending: () => { clearCart(); sessionStorage.removeItem('checkout_shipping'); router.push(`/sukses?order=${order.order_number}`) },
+        onSuccess: () => { clearCart(); sessionStorage.removeItem('checkout_shipping'); sessionStorage.removeItem('checkout_promo'); router.push(`/sukses?order=${order.order_number}`) },
+        onPending: () => { clearCart(); sessionStorage.removeItem('checkout_shipping'); sessionStorage.removeItem('checkout_promo'); router.push(`/sukses?order=${order.order_number}`) },
         onError: () => toast.error('Pembayaran gagal, silakan coba lagi'),
         onClose: () => toast('Pembayaran dibatalkan'),
       })
@@ -143,7 +159,9 @@ export default function CheckoutPage() {
   }
 
   if (!shipping) return null
-  const grandTotal = total() + (shipping.ongkir?.cost || 0)
+  const discountAmount = promo?.discount_amount || 0
+  const shippingCost = promo?.free_shipping ? 0 : (shipping.ongkir?.cost || 0)
+  const grandTotal = Math.max(0, total() - discountAmount + shippingCost)
   const isProduction = process.env.NEXT_PUBLIC_MIDTRANS_IS_PRODUCTION === 'true'
   const snapUrl = isProduction
     ? 'https://app.midtrans.com/snap/snap.js'
@@ -207,10 +225,27 @@ export default function CheckoutPage() {
           <div className="text-[13px] font-semibold text-[#4a6650] mb-2">🚚 Pengiriman</div>
           <div className="flex justify-between text-[12px]">
             <span className="text-gray-600">{shipping.ongkir?.courier} {shipping.ongkir?.service}</span>
-            <span className="font-semibold">{'Rp ' + (shipping.ongkir?.cost || 0).toLocaleString('id-ID')}</span>
+            <span className="font-semibold">
+              {promo?.free_shipping
+                ? <span className="text-[#4a6650]">Gratis (promo)</span>
+                : fmt(shipping.ongkir?.cost || 0)}
+            </span>
           </div>
           <div className="text-[11px] text-gray-400 mt-0.5">Estimasi {shipping.ongkir?.etd} hari kerja</div>
         </div>
+
+        {/* Promo yang dipakai */}
+        {promo && (
+          <div className="bg-white rounded-xl border border-gray-100 p-3.5">
+            <div className="flex items-center justify-between">
+              <div className="text-[13px] font-semibold text-[#4a6650]">🏷️ Kode Promo</div>
+              <span className="font-mono text-[12px] font-bold text-[#4a6650]">{promo.code}</span>
+            </div>
+            {discountAmount > 0 && (
+              <div className="text-[11px] text-gray-500 mt-1">Hemat {fmt(discountAmount)}</div>
+            )}
+          </div>
+        )}
 
         {/* Ringkasan produk */}
         <div className="bg-white rounded-xl border border-gray-100 p-3.5">
@@ -218,12 +253,18 @@ export default function CheckoutPage() {
           {items.map(i => (
             <div key={`${i.product.id}-${i.size}`} className="flex justify-between text-[12px] text-gray-600 mb-1.5">
               <span>{i.product.name} ({i.size}) x{i.quantity}</span>
-              <span>{'Rp ' + (i.product.price * i.quantity).toLocaleString('id-ID')}</span>
+              <span>{fmt(i.product.price * i.quantity)}</span>
             </div>
           ))}
+          {discountAmount > 0 && (
+            <div className="flex justify-between text-[12px] text-[#4a6650] mb-1.5">
+              <span>Diskon Promo</span>
+              <span>- {fmt(discountAmount)}</span>
+            </div>
+          )}
           <div className="flex justify-between text-[12px] text-gray-400 mb-2">
             <span>Ongkir ({shipping.ongkir?.courier} {shipping.ongkir?.service})</span>
-            <span>{'Rp ' + (shipping.ongkir?.cost || 0).toLocaleString('id-ID')}</span>
+            <span>{promo?.free_shipping ? 'Gratis' : fmt(shipping.ongkir?.cost || 0)}</span>
           </div>
           <div className="flex justify-between text-[14px] font-bold text-[#4a6650] border-t border-gray-100 pt-2.5">
             <span>Total Bayar</span>

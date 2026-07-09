@@ -1,12 +1,13 @@
 // =============================================
 // src/app/(store)/keranjang/page.tsx
-// Halaman Keranjang + Hitung Ongkir (RajaOngkir API V2)
+// Halaman Keranjang + Hitung Ongkir (RajaOngkir API V2) + Kode Promo
 // =============================================
 'use client'
 import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useCartStore } from '@/store/cartStore'
 import { MobileLayout } from '@/components/layout/MobileLayout'
+import { supabase } from '@/lib/supabase'
 import toast from 'react-hot-toast'
 import type { OngkirResult } from '@/types'
 
@@ -18,6 +19,15 @@ type DestinationOption = {
   district_name: string
   subdistrict_name: string
   zip_code: string
+}
+
+type AppliedPromo = {
+  id: string
+  discount_type: string
+  discount_value: number
+  max_discount: number | null
+  discount_amount: number
+  free_shipping: boolean
 }
 
 export default function CartPage() {
@@ -32,6 +42,12 @@ export default function CartPage() {
   const [ongkirResults, setOngkirResults] = useState<OngkirResult[]>([])
   const [selectedOngkir, setSelectedOngkir] = useState<OngkirResult | null>(null)
   const [loadingOngkir, setLoadingOngkir] = useState(false)
+
+  // --- State untuk kode promo ---
+  const [promoCode, setPromoCode] = useState('')
+  const [appliedPromo, setAppliedPromo] = useState<AppliedPromo | null>(null)
+  const [promoError, setPromoError] = useState('')
+  const [checkingPromo, setCheckingPromo] = useState(false)
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const fmt = (n: number) => 'Rp ' + n.toLocaleString('id-ID')
@@ -87,7 +103,40 @@ export default function CartPage() {
     finally { setLoadingOngkir(false) }
   }
 
-  const grandTotal = total() + (selectedOngkir?.cost || 0)
+  // --- Fungsi kode promo ---
+  async function applyPromo() {
+    if (!promoCode.trim()) return
+    setPromoError('')
+    setCheckingPromo(true)
+    try {
+      const { data, error } = await supabase.rpc('validate_promo', {
+        p_code: promoCode.trim(),
+        p_subtotal: total(),
+      })
+      if (error || !data || data.length === 0) {
+        setPromoError(error?.message || 'Kode promo tidak valid')
+        setAppliedPromo(null)
+        return
+      }
+      setAppliedPromo(data[0])
+      toast.success('Kode promo berhasil dipakai!')
+    } catch {
+      setPromoError('Gagal memeriksa kode promo, coba lagi')
+      setAppliedPromo(null)
+    } finally {
+      setCheckingPromo(false)
+    }
+  }
+
+  function removePromo() {
+    setAppliedPromo(null)
+    setPromoCode('')
+    setPromoError('')
+  }
+
+  const discountAmount = appliedPromo?.discount_amount || 0
+  const shippingCost = appliedPromo?.free_shipping ? 0 : (selectedOngkir?.cost || 0)
+  const grandTotal = Math.max(0, total() - discountAmount + shippingCost)
 
   function goCheckout() {
     if (!selectedOngkir || !selectedDestination) { toast.error('Pilih layanan pengiriman dulu!'); return }
@@ -100,6 +149,13 @@ export default function CartPage() {
       fullLabel: selectedDestination.label,
       ongkir: selectedOngkir,
     }))
+    // Bawa info promo yang sedang dipakai ke halaman checkout
+    sessionStorage.setItem('checkout_promo', appliedPromo ? JSON.stringify({
+      id: appliedPromo.id,
+      code: promoCode.trim().toUpperCase(),
+      discount_amount: discountAmount,
+      free_shipping: appliedPromo.free_shipping,
+    }) : '')
     router.push('/checkout')
   }
 
@@ -201,15 +257,61 @@ export default function CartPage() {
           )}
         </div>
 
+        {/* Kode Promo */}
+        <div className="bg-white rounded-xl border border-gray-100 p-3.5 mb-3">
+          <div className="text-[13px] font-semibold text-[#4a6650] mb-3">🏷️ Kode Promo</div>
+          {appliedPromo ? (
+            <div className="flex items-center justify-between bg-[#e8f0e9] rounded-lg px-3 py-2.5">
+              <div>
+                <div className="text-[12px] font-bold text-[#4a6650] font-mono">{promoCode.toUpperCase()}</div>
+                <div className="text-[11px] text-[#4a6650]">
+                  {appliedPromo.free_shipping ? 'Gratis ongkir diterapkan' : `Hemat ${fmt(discountAmount)}`}
+                </div>
+              </div>
+              <button onClick={removePromo} className="text-[11px] text-red-500 font-semibold">Hapus</button>
+            </div>
+          ) : (
+            <>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={promoCode}
+                  onChange={e => { setPromoCode(e.target.value.toUpperCase()); setPromoError('') }}
+                  placeholder="Masukkan kode promo"
+                  className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-[12px] text-gray-800 bg-white font-mono"
+                />
+                <button
+                  onClick={applyPromo}
+                  disabled={checkingPromo || !promoCode.trim()}
+                  className="bg-[#4a6650] text-white text-[12px] font-semibold px-4 rounded-lg disabled:opacity-50"
+                >
+                  {checkingPromo ? '...' : 'Pakai'}
+                </button>
+              </div>
+              {promoError && <div className="text-[11px] text-red-500 mt-1.5">{promoError}</div>}
+            </>
+          )}
+        </div>
+
         {/* Ringkasan */}
         <div className="bg-white rounded-xl border border-gray-100 p-3.5 mb-3">
           <div className="flex justify-between text-[12px] text-gray-600 mb-2">
             <span>Subtotal ({itemCount()} item)</span>
             <span>{fmt(total())}</span>
           </div>
+          {appliedPromo && discountAmount > 0 && (
+            <div className="flex justify-between text-[12px] text-[#4a6650] mb-2">
+              <span>Diskon Promo</span>
+              <span>- {fmt(discountAmount)}</span>
+            </div>
+          )}
           <div className="flex justify-between text-[12px] text-gray-600 mb-3">
             <span>Ongkos Kirim</span>
-            <span>{selectedOngkir ? fmt(selectedOngkir.cost) : '-'}</span>
+            <span>
+              {!selectedOngkir ? '-' : appliedPromo?.free_shipping
+                ? <span className="text-[#4a6650] font-semibold">Gratis</span>
+                : fmt(selectedOngkir.cost)}
+            </span>
           </div>
           <div className="flex justify-between text-[14px] font-bold text-[#4a6650] border-t border-gray-100 pt-3">
             <span>Total Bayar</span>
