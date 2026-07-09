@@ -13,9 +13,9 @@ const adminNav = [
   { href: '/admin/pesanan', icon: '📦', label: 'Pesanan' },
   { href: '/admin/produk', icon: '🛍️', label: 'Produk' },
   { href: '/admin/kategori', icon: '📂', label: 'Kategori' },
+  { href: '/admin/promo', icon: '🏷️', label: 'Promo' },
   { href: '/admin/pengaturan', icon: '⚙️', label: 'Setting' },
 ]
-
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
