@@ -7,20 +7,20 @@ import { supabase } from '@/lib/supabase'
 import { MobileLayout } from '@/components/layout/MobileLayout'
 import { ProductCard } from '@/components/product/ProductCard'
 import { HeroBanner } from '@/components/home/HeroBanner'
+import { PromoBanner } from '@/components/home/PromoBanner'
 import { CategoryGrid } from '@/components/home/CategoryGrid'
 import Link from 'next/link'
 
 async function getData() {
-  const [{ data: products }, { data: categories }, { data: settings }, { data: promos }] =
+  const [{ data: products }, { data: categories }, { data: settings }] =
     await Promise.all([
       supabase.from('products').select('*, categories(name,slug)').eq('is_active', true).order('created_at', { ascending: false }).limit(4),
       supabase.from('categories').select('*').order('sort_order'),
       supabase.from('site_settings').select('*'),
-      supabase.from('promos').select('*').eq('is_active', true).limit(1),
     ])
 
   const settingsMap = Object.fromEntries((settings || []).map(s => [s.key, s.value]))
-  return { products: products || [], categories: categories || [], settings: settingsMap, promo: promos?.[0] }
+  return { products: products || [], categories: categories || [], settings: settingsMap }
 }
 
 export const revalidate = 0
@@ -28,11 +28,25 @@ export const revalidate = 0
 export default async function HomePage() {
   const { products, categories, settings } = await getData()
   const hero = settings.hero || {}
+  const banner = settings.promo_banner || {}
 
   return (
     <MobileLayout>
       {/* Hero */}
       <HeroBanner title={hero.title} subtitle={hero.subtitle} themeColor={hero.theme_color} imageUrl={hero.image_url} />
+
+      {/* Banner Promo — hanya tampil kalau diaktifkan di Setting */}
+      {banner.is_active && (
+        <section className="px-3.5 pt-3.5">
+          <PromoBanner
+            title={banner.title}
+            subtitle={banner.subtitle}
+            discountLabel={banner.discount_label}
+            imageUrl={banner.image_url}
+            endDate={banner.end_date}
+          />
+        </section>
+      )}
 
       {/* Kategori */}
       <section className="p-3.5">

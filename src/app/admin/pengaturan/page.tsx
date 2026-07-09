@@ -10,7 +10,7 @@ import toast from 'react-hot-toast'
 
 export default function AdminSettingsPage() {
   const [hero, setHero] = useState({ title: '', subtitle: '', theme_color: '#4a6650', image_url: '' })
-  const [banner, setBanner] = useState({ title: '', subtitle: '', discount_label: '', is_active: true, image_url: '' })
+  const [banner, setBanner] = useState({ title: '', subtitle: '', discount_label: '', is_active: true, image_url: '', end_date: '' })
   const [store, setStore] = useState({ name: '', whatsapp: '', email: '', instagram: '' })
   const [saving, setSaving] = useState(false)
 
@@ -27,7 +27,7 @@ export default function AdminSettingsPage() {
       if (!data) return
       data.forEach(s => {
         if (s.key === 'hero') { setHero(s.value); setHeroImgPreview(s.value.image_url || '') }
-        if (s.key === 'promo_banner') { setBanner(s.value); setBannerImgPreview(s.value.image_url || '') }
+        if (s.key === 'promo_banner') { setBanner({ end_date: '', ...s.value }); setBannerImgPreview(s.value.image_url || '') }
         if (s.key === 'store_info') setStore(s.value)
       })
     })
@@ -171,6 +171,21 @@ export default function AdminSettingsPage() {
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[12px] outline-none focus:border-[#4a6650] text-gray-800 bg-white" />
           </div>
         ))}
+
+        {/* Tanggal & jam berakhir — buat countdown timer di banner */}
+        <div className="mb-2">
+          <label className="text-[11px] text-gray-500 mb-1 block">Tanggal & Jam Berakhir Promo (opsional)</label>
+          <input
+            type="datetime-local"
+            value={banner.end_date}
+            onChange={e => setBanner(b => ({ ...b, end_date: e.target.value }))}
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[12px] outline-none focus:border-[#4a6650] text-gray-800 bg-white"
+          />
+          <p className="text-[10px] text-gray-400 mt-1">
+            Kalau diisi, banner akan menampilkan hitung mundur dan otomatis hilang sendiri setelah waktu ini lewat. Kosongkan kalau promo tidak ada batas waktu.
+          </p>
+        </div>
+
         <label className="flex items-center gap-2 text-[12px] cursor-pointer mt-1">
           <input type="checkbox" checked={banner.is_active} onChange={e => setBanner(b => ({ ...b, is_active: e.target.checked }))} />
           Tampilkan banner promo di beranda
