@@ -1,6 +1,6 @@
 // =============================================
 // src/lib/uploadImage.ts
-// Upload foto produk ke Supabase Storage
+// Upload foto produk & foto ulasan ke Supabase Storage
 // =============================================
 
 import { supabase } from './supabase'
@@ -43,6 +43,40 @@ export async function deleteProductImage(imageUrl: string): Promise<void> {
 export async function uploadProductImages(files: File[], productSlug: string): Promise<string[]> {
   const results = await Promise.all(
     files.map((file, idx) => uploadProductImage(file, `${productSlug}-${idx}`))
+  )
+  return results.filter((url): url is string => !!url)
+}
+
+// --- Foto ulasan pembeli ---
+
+async function uploadReviewImage(file: File, reviewLabel: string): Promise<string | null> {
+  const ext = file.name.split('.').pop()
+  const fileName = `${reviewLabel}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.${ext}`
+  const filePath = `reviews/${fileName}`
+
+  const { error } = await supabase.storage
+    .from('review-images')
+    .upload(filePath, file, {
+      cacheControl: '3600',
+      upsert: false,
+    })
+
+  if (error) {
+    console.error('Upload error:', error)
+    return null
+  }
+
+  const { data: urlData } = supabase.storage
+    .from('review-images')
+    .getPublicUrl(filePath)
+
+  return urlData.publicUrl
+}
+
+// Upload beberapa foto ulasan sekaligus (maks biasanya 3, tapi dibatasi di komponen form-nya)
+export async function uploadReviewImages(files: File[], productSlug: string): Promise<string[]> {
+  const results = await Promise.all(
+    files.map(file => uploadReviewImage(file, `review-${productSlug}`))
   )
   return results.filter((url): url is string => !!url)
 }
