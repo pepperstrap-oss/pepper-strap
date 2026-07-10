@@ -3,9 +3,10 @@
 // Halaman Lacak Pesanan (untuk guest maupun member)
 // =============================================
 'use client'
-import { useState, Suspense } from 'react'
+import { useState, useEffect, useRef, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { useAuthStore } from '@/store/authStore'
 import { MobileLayout } from '@/components/layout/MobileLayout'
 import { OrderTimeline } from '@/components/order/OrderTimeline'
 
@@ -20,17 +21,23 @@ const STATUS_INFO: Record<string, { label: string; icon: string; color: string; 
 
 function LacakContent() {
   const searchParams = useSearchParams()
+  const { user } = useAuthStore()
   const [orderNumber, setOrderNumber] = useState(searchParams.get('nomor') || '')
   const [email, setEmail] = useState('')
   const [order, setOrder] = useState<any>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [searched, setSearched] = useState(false)
+  const autoTriggered = useRef(false)
   const fmt = (n: number) => 'Rp ' + n.toLocaleString('id-ID')
 
-  async function handleTrack(e: React.FormEvent) {
-    e.preventDefault()
-    if (!orderNumber.trim() || !email.trim()) { setError('Nomor pesanan dan email wajib diisi'); return }
+  // Kalau user sudah login, isi email otomatis dari akunnya
+  useEffect(() => {
+    if (user?.email) setEmail(user.email)
+  }, [user])
+
+  async function trackOrder(orderNumberValue: string, emailValue: string) {
+    if (!orderNumberValue.trim() || !emailValue.trim()) { setError('Nomor pesanan dan email wajib diisi'); return }
     setLoading(true)
     setError('')
     setOrder(null)
@@ -40,7 +47,7 @@ function LacakContent() {
       const { data, error: err } = await supabase
         .from('orders')
         .select('*, order_items(*)')
-        .eq('order_number', orderNumber.trim().toUpperCase())
+        .eq('order_number', orderNumberValue.trim().toUpperCase())
         .single()
 
       if (err || !data) {
@@ -51,13 +58,13 @@ function LacakContent() {
 
       // Verifikasi email (cocokkan dengan guest_email atau email user)
       const emailMatch =
-        data.guest_email?.toLowerCase() === email.trim().toLowerCase() ||
-        data.shipping_address?.email?.toLowerCase() === email.trim().toLowerCase()
+        data.guest_email?.toLowerCase() === emailValue.trim().toLowerCase() ||
+        data.shipping_address?.email?.toLowerCase() === emailValue.trim().toLowerCase()
 
       if (!emailMatch) {
         // Cek email dari auth.users kalau user punya akun
         const { data: userData } = await supabase.auth.getUser()
-        if (!userData?.user || userData.user.email?.toLowerCase() !== email.trim().toLowerCase()) {
+        if (!userData?.user || userData.user.email?.toLowerCase() !== emailValue.trim().toLowerCase()) {
           setError('Email tidak cocok dengan data pesanan ini.')
           setLoading(false)
           return
@@ -70,6 +77,21 @@ function LacakContent() {
     }
     setLoading(false)
   }
+
+  function handleTrack(e: React.FormEvent) {
+    e.preventDefault()
+    trackOrder(orderNumber, email)
+  }
+
+  // Auto-cari kalau datang dari halaman "Pesanan Saya" (ada ?nomor=...&auto=1 dan user sudah login)
+  useEffect(() => {
+    if (autoTriggered.current) return
+    const shouldAuto = searchParams.get('auto') === '1'
+    if (shouldAuto && orderNumber && user?.email) {
+      autoTriggered.current = true
+      trackOrder(orderNumber, user.email)
+    }
+  }, [orderNumber, user])
 
   const statusInfo = order ? (STATUS_INFO[order.status] || { label: order.status, icon: '📋', color: 'text-gray-600', desc: '' }) : null
 

@@ -8,7 +8,6 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
 import { MobileLayout } from '@/components/layout/MobileLayout'
-
 const STATUS_LABEL: Record<string, { label: string; color: string }> = {
   pending: { label: 'Menunggu Bayar', color: 'bg-yellow-100 text-yellow-700' },
   paid: { label: 'Dibayar', color: 'bg-blue-100 text-blue-700' },
@@ -17,20 +16,22 @@ const STATUS_LABEL: Record<string, { label: string; color: string }> = {
   delivered: { label: 'Selesai', color: 'bg-green-100 text-green-700' },
   cancelled: { label: 'Dibatalkan', color: 'bg-red-100 text-red-700' },
 }
-
 export default function MyOrdersPage() {
   const router = useRouter()
   const { user } = useAuthStore()
   const [orders, setOrders] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const fmt = (n: number) => 'Rp ' + n.toLocaleString('id-ID')
-
   useEffect(() => {
     if (!user) { setLoading(false); return }
     supabase.from('orders').select('*, order_items(*)').eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .then(({ data }) => { setOrders(data || []); setLoading(false) })
   }, [user])
+
+  function openOrder(orderNumber: string) {
+    router.push(`/lacak?nomor=${encodeURIComponent(orderNumber)}&auto=1`)
+  }
 
   return (
     <MobileLayout>
@@ -49,7 +50,11 @@ export default function MyOrdersPage() {
         ) : orders.map(order => {
           const s = STATUS_LABEL[order.status] || { label: order.status, color: 'bg-gray-100 text-gray-600' }
           return (
-            <div key={order.id} className="bg-white rounded-xl border border-gray-100 p-3.5 mb-3">
+            <button
+              key={order.id}
+              onClick={() => openOrder(order.order_number)}
+              className="w-full text-left bg-white rounded-xl border border-gray-100 p-3.5 mb-3 active:bg-gray-50 transition-colors"
+            >
               <div className="flex justify-between items-start mb-2">
                 <div>
                   <div className="text-[12px] font-bold text-gray-800">{order.order_number}</div>
@@ -64,11 +69,14 @@ export default function MyOrdersPage() {
               </div>
               <div className="flex justify-between items-center border-t border-gray-50 pt-2">
                 <span className="text-[13px] font-bold text-[#4a6650]">{fmt(order.total)}</span>
-                {order.tracking_number && (
-                  <span className="text-[11px] text-gray-500">Resi: {order.tracking_number}</span>
-                )}
+                <div className="flex items-center gap-1.5">
+                  {order.tracking_number && (
+                    <span className="text-[11px] text-gray-500">Resi: {order.tracking_number}</span>
+                  )}
+                  <span className="text-gray-300 text-[13px]">›</span>
+                </div>
               </div>
-            </div>
+            </button>
           )
         })}
       </div>
