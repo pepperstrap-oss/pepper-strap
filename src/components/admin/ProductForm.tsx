@@ -79,6 +79,17 @@ export function ProductForm({ categories, onSuccess, editProduct }: Props) {
     }
   }
 
+  // Tukar posisi foto dengan tetangganya (kiri/kanan) — dipakai buat atur urutan tanpa hapus-upload ulang
+  function moveImage(index: number, direction: -1 | 1) {
+    const targetIndex = index + direction
+    if (targetIndex < 0 || targetIndex >= gallery.length) return
+    setGallery(prev => {
+      const next = [...prev]
+      ;[next[index], next[targetIndex]] = [next[targetIndex], next[index]]
+      return next
+    })
+  }
+
   function generateSlug(name: string) {
     return name.toLowerCase()
       .replace(/[^a-z0-9\s-]/g, '')
@@ -181,6 +192,30 @@ export function ProductForm({ categories, onSuccess, editProduct }: Props) {
               >
                 ✕
               </button>
+
+              {/* Tombol geser urutan — panah kiri/kanan */}
+              {gallery.length > 1 && (
+                <div className="absolute bottom-0.5 left-0.5 right-0.5 flex justify-between">
+                  <button
+                    type="button"
+                    onClick={() => moveImage(idx, -1)}
+                    disabled={idx === 0}
+                    className="w-5 h-5 bg-black/60 text-white text-[10px] rounded-full flex items-center justify-center disabled:opacity-0"
+                    aria-label="Geser ke kiri"
+                  >
+                    ‹
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => moveImage(idx, 1)}
+                    disabled={idx === gallery.length - 1}
+                    className="w-5 h-5 bg-black/60 text-white text-[10px] rounded-full flex items-center justify-center disabled:opacity-0"
+                    aria-label="Geser ke kanan"
+                  >
+                    ›
+                  </button>
+                </div>
+              )}
             </div>
           ))}
 
@@ -204,7 +239,7 @@ export function ProductForm({ categories, onSuccess, editProduct }: Props) {
           onChange={handleImageChange}
           className="hidden"
         />
-        <p className="text-xs text-gray-400">JPG, PNG, WEBP (maks 5MB per foto). Hapus lalu unggah ulang untuk mengubah urutan.</p>
+        <p className="text-xs text-gray-400">JPG, PNG, WEBP (maks 5MB per foto). Pakai tombol ‹ › di tiap foto untuk atur urutan.</p>
       </div>
 
       {/* Nama */}
