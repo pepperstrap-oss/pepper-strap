@@ -8,6 +8,7 @@ import { useRouter } from 'next/navigation'
 import { useCartStore } from '@/store/cartStore'
 import toast from 'react-hot-toast'
 import type { Product } from '@/types'
+import { ProductDescription } from './ProductDescription'
 
 export function ProductDetailClient({ product: p }: { product: Product }) {
   const router = useRouter()
@@ -19,7 +20,6 @@ export function ProductDetailClient({ product: p }: { product: Product }) {
   // Dukung produk lama yang cuma punya image_url (belum ada array images)
   const photos = p.images?.length ? p.images : (p.image_url ? [p.image_url] : [])
   const [activePhoto, setActivePhoto] = useState(0)
-  const [lightboxOpen, setLightboxOpen] = useState(false)
 
   function handleAddCart() {
     addItem(p, qty, selectedSize)
@@ -39,23 +39,15 @@ export function ProductDetailClient({ product: p }: { product: Product }) {
         <span className="text-white font-semibold text-sm">Detail Produk</span>
       </div>
 
-      {/* Foto produk (galeri, rasio 1:1, foto tampil penuh tanpa terpotong) */}
-      <div
-        onClick={() => photos.length > 0 && setLightboxOpen(true)}
-        className="relative aspect-square bg-[#e8f0e9] flex items-center justify-center overflow-hidden cursor-zoom-in"
-      >
+      {/* Foto produk (galeri) */}
+      <div className="h-72 bg-[#e8f0e9] flex items-center justify-center overflow-hidden relative">
         {photos.length > 0
-          ? <img src={photos[activePhoto]} alt={p.name} className="w-full h-full object-contain" />
+          ? <img src={photos[activePhoto]} alt={p.name} className="w-full h-full object-cover" />
           : <span className="text-7xl">📦</span>
         }
         {photos.length > 1 && (
           <span className="absolute bottom-2 right-2 bg-black/50 text-white text-[10px] font-semibold px-2 py-0.5 rounded-full">
             {activePhoto + 1}/{photos.length}
-          </span>
-        )}
-        {photos.length > 0 && (
-          <span className="absolute bottom-2 left-2 bg-black/50 text-white text-[10px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-1">
-            🔍 Ketuk untuk perbesar
           </span>
         )}
       </div>
@@ -67,50 +59,13 @@ export function ProductDetailClient({ product: p }: { product: Product }) {
             <button
               key={idx}
               onClick={() => setActivePhoto(idx)}
-              className={`w-14 h-14 flex-shrink-0 rounded-lg overflow-hidden border-2 transition-colors bg-[#e8f0e9] ${
+              className={`w-14 h-14 flex-shrink-0 rounded-lg overflow-hidden border-2 transition-colors ${
                 activePhoto === idx ? 'border-[#4a6650]' : 'border-transparent'
               }`}
             >
-              <img src={url} alt={`${p.name} foto ${idx + 1}`} className="w-full h-full object-contain" />
+              <img src={url} alt={`${p.name} foto ${idx + 1}`} className="w-full h-full object-cover" />
             </button>
           ))}
-        </div>
-      )}
-
-      {/* Lightbox — foto ukuran penuh */}
-      {lightboxOpen && photos.length > 0 && (
-        <div
-          onClick={() => setLightboxOpen(false)}
-          className="fixed inset-0 bg-black/90 z-[100] flex flex-col items-center justify-center px-4"
-        >
-          <button
-            onClick={() => setLightboxOpen(false)}
-            className="absolute top-4 right-4 text-white text-2xl w-9 h-9 flex items-center justify-center bg-white/10 rounded-full"
-            aria-label="Tutup"
-          >
-            ✕
-          </button>
-          <img
-            src={photos[activePhoto]}
-            alt={p.name}
-            onClick={e => e.stopPropagation()}
-            className="max-w-full max-h-[75vh] object-contain"
-          />
-          {photos.length > 1 && (
-            <div className="flex gap-2 mt-4 overflow-x-auto max-w-full px-4" onClick={e => e.stopPropagation()}>
-              {photos.map((url, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => setActivePhoto(idx)}
-                  className={`w-12 h-12 flex-shrink-0 rounded-lg overflow-hidden border-2 ${
-                    activePhoto === idx ? 'border-white' : 'border-white/30'
-                  }`}
-                >
-                  <img src={url} alt={`${p.name} foto ${idx + 1}`} className="w-full h-full object-cover" />
-                </button>
-              ))}
-            </div>
-          )}
         </div>
       )}
 
@@ -122,7 +77,9 @@ export function ProductDetailClient({ product: p }: { product: Product }) {
             <span className="text-sm text-gray-400 line-through">{fmt(p.original_price)}</span>
           )}
         </div>
-        <p className="text-[12px] text-gray-500 leading-relaxed mb-4">{p.description}</p>
+
+        {/* Deskripsi produk — sudah dirapikan jadi bagian berjudul + daftar poin */}
+        <ProductDescription description={p.description} />
 
         {/* Pilih ukuran */}
         <div className="mb-4">
