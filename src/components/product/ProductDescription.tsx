@@ -28,7 +28,7 @@ function parseDescription(text: string): { intro: string; sections: Section[] } 
   return { intro, sections }
 }
 
-export function ProductDescription({ description }: { description: string }) {
+export function ProductDescription({ description }: { description?: string | null }) {
   const { intro, sections } = parseDescription(description || '')
 
   // Kalau nggak kedeteksi ada bagian berjudul, tapi ada tanda "•", pecah jadi daftar poin sederhana
