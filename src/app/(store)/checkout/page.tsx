@@ -1,12 +1,11 @@
 // =============================================
 // src/app/(store)/checkout/page.tsx
-// Halaman Checkout + Alamat + Midtrans + Kode Promo
+// Halaman Checkout + Alamat + DOKU Checkout (redirect) + Kode Promo
 // Mendukung checkout dengan akun ATAU sebagai tamu (guest checkout)
 // =============================================
 'use client'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import Script from 'next/script'
 import { useCartStore } from '@/store/cartStore'
 import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/lib/supabase'
@@ -14,12 +13,11 @@ import toast from 'react-hot-toast'
 
 export default function CheckoutPage() {
   const router = useRouter()
-  const { items, total, clearCart } = useCartStore()
+  const { items, total } = useCartStore()
   const { user, profile } = useAuthStore()
   const [shipping, setShipping] = useState<any>(null)
-  const [promo, setPromo] = useState<any>(null) // { id, code, discount_amount, free_shipping } atau null
+  const [promo, setPromo] = useState<any>(null)
   const [loading, setLoading] = useState(false)
-  const [snapReady, setSnapReady] = useState(false)
   const [form, setForm] = useState({
     recipient_name: '',
     email: '',
@@ -60,10 +58,6 @@ export default function CheckoutPage() {
       toast.error('Email wajib diisi untuk konfirmasi pesanan')
       return
     }
-    if (!snapReady) {
-      toast.error('Sistem pembayaran sedang dimuat, coba lagi sebentar')
-      return
-    }
     setLoading(true)
     try {
       const shippingAddress = {
@@ -81,7 +75,6 @@ export default function CheckoutPage() {
       const grandTotal = Math.max(0, subtotal - discountAmount + shippingCost)
       const customerEmail = isGuest ? form.email : user!.email
 
-      // Simpan order ke Supabase — user_id diisi jika login, atau kosong (tamu) dengan data kontak guest_*
       const orderPayload: any = {
         subtotal,
         shipping_cost: shippingCost,
@@ -105,10 +98,8 @@ export default function CheckoutPage() {
       }
 
       const { data: order, error: orderError } = await supabase.from('orders').insert(orderPayload).select().single()
-
       if (orderError) throw orderError
 
-      // Simpan order items
       await supabase.from('order_items').insert(
         items.map(i => ({
           order_id: order.id,
@@ -122,38 +113,30 @@ export default function CheckoutPage() {
         }))
       )
 
-      // Tambah pemakaian kode promo (kalau ada yang dipakai)
       if (promo?.id) {
         await supabase.rpc('increment_promo_usage', { p_promo_id: promo.id })
       }
 
-      // Buat token Midtrans
-      const payRes = await fetch('/api/midtrans/create-transaction', {
+      // Buat transaksi DOKU, lalu redirect ke halaman pembayarannya
+      const payRes = await fetch('/api/doku/create-transaction', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           orderId: order.id,
-          items: items.map(i => ({ product_id: i.product.id, name: i.product.name, size: i.size, price: i.product.price, quantity: i.quantity })),
-          customer: { name: form.recipient_name, email: customerEmail, phone: form.phone, address: shippingAddress },
+          orderNumber: order.order_number,
+          items: items.map(i => ({ name: i.product.name, size: i.size, price: i.product.price, quantity: i.quantity })),
+          customer: { name: form.recipient_name, email: customerEmail, phone: form.phone },
           shippingCost,
           discountAmount,
         }),
       })
 
       const payData = await payRes.json()
-      if (!payData.token) throw new Error('Gagal membuat transaksi pembayaran')
+      if (!payData.url) throw new Error(payData.error || 'Gagal membuat transaksi pembayaran')
 
-      // Buka Midtrans Snap
-      // @ts-ignore
-      window.snap.pay(payData.token, {
-        onSuccess: () => { clearCart(); sessionStorage.removeItem('checkout_shipping'); sessionStorage.removeItem('checkout_promo'); router.push(`/sukses?order=${order.order_number}`) },
-        onPending: () => { clearCart(); sessionStorage.removeItem('checkout_shipping'); sessionStorage.removeItem('checkout_promo'); router.push(`/sukses?order=${order.order_number}`) },
-        onError: () => toast.error('Pembayaran gagal, silakan coba lagi'),
-        onClose: () => toast('Pembayaran dibatalkan'),
-      })
+      window.location.href = payData.url
     } catch (err: any) {
       toast.error(err.message || 'Terjadi kesalahan')
-    } finally {
       setLoading(false)
     }
   }
@@ -162,28 +145,15 @@ export default function CheckoutPage() {
   const discountAmount = promo?.discount_amount || 0
   const shippingCost = promo?.free_shipping ? 0 : (shipping.ongkir?.cost || 0)
   const grandTotal = Math.max(0, total() - discountAmount + shippingCost)
-  const isProduction = process.env.NEXT_PUBLIC_MIDTRANS_IS_PRODUCTION === 'true'
-  const snapUrl = isProduction
-    ? 'https://app.midtrans.com/snap/snap.js'
-    : 'https://app.sandbox.midtrans.com/snap/snap.js'
 
   return (
     <div className="max-w-[420px] mx-auto min-h-screen bg-[#f7f5f0] pb-24">
-      {/* Midtrans Snap script */}
-      <Script
-        src={snapUrl}
-        data-client-key={process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY}
-        onReady={() => setSnapReady(true)}
-        strategy="afterInteractive"
-      />
-
       <div className="bg-[#4a6650] px-4 py-3 flex items-center gap-3">
         <button onClick={() => router.back()} className="text-white text-xl">←</button>
         <span className="text-white font-semibold text-sm">Checkout</span>
       </div>
 
       <div className="p-3.5 space-y-3">
-        {/* Info guest checkout */}
         {isGuest && (
           <div className="bg-[#e8f0e9] rounded-xl p-3.5 text-[12px] text-[#4a6650] leading-relaxed">
             Anda berbelanja tanpa akun. Isi data di bawah untuk melanjutkan, atau{' '}
@@ -194,7 +164,6 @@ export default function CheckoutPage() {
           </div>
         )}
 
-        {/* Alamat */}
         <div className="bg-white rounded-xl border border-gray-100 p-3.5">
           <div className="text-[13px] font-semibold text-[#4a6650] mb-3">📍 Data Pemesan & Alamat Pengiriman</div>
           {[
@@ -220,34 +189,27 @@ export default function CheckoutPage() {
           </div>
         </div>
 
-        {/* Pengiriman */}
         <div className="bg-white rounded-xl border border-gray-100 p-3.5">
           <div className="text-[13px] font-semibold text-[#4a6650] mb-2">🚚 Pengiriman</div>
           <div className="flex justify-between text-[12px]">
             <span className="text-gray-600">{shipping.ongkir?.courier} {shipping.ongkir?.service}</span>
             <span className="font-semibold">
-              {promo?.free_shipping
-                ? <span className="text-[#4a6650]">Gratis (promo)</span>
-                : fmt(shipping.ongkir?.cost || 0)}
+              {promo?.free_shipping ? <span className="text-[#4a6650]">Gratis (promo)</span> : fmt(shipping.ongkir?.cost || 0)}
             </span>
           </div>
           <div className="text-[11px] text-gray-400 mt-0.5">Estimasi {shipping.ongkir?.etd} hari kerja</div>
         </div>
 
-        {/* Promo yang dipakai */}
         {promo && (
           <div className="bg-white rounded-xl border border-gray-100 p-3.5">
             <div className="flex items-center justify-between">
               <div className="text-[13px] font-semibold text-[#4a6650]">🏷️ Kode Promo</div>
               <span className="font-mono text-[12px] font-bold text-[#4a6650]">{promo.code}</span>
             </div>
-            {discountAmount > 0 && (
-              <div className="text-[11px] text-gray-500 mt-1">Hemat {fmt(discountAmount)}</div>
-            )}
+            {discountAmount > 0 && <div className="text-[11px] text-gray-500 mt-1">Hemat {fmt(discountAmount)}</div>}
           </div>
         )}
 
-        {/* Ringkasan produk */}
         <div className="bg-white rounded-xl border border-gray-100 p-3.5">
           <div className="text-[13px] font-semibold text-[#4a6650] mb-2">📦 Ringkasan Pesanan</div>
           {items.map(i => (
@@ -272,7 +234,6 @@ export default function CheckoutPage() {
           </div>
         </div>
 
-        {/* Catatan */}
         <div className="bg-white rounded-xl border border-gray-100 p-3.5">
           <label className="text-[12px] text-gray-500 mb-1 block">Catatan (opsional)</label>
           <textarea
@@ -289,7 +250,7 @@ export default function CheckoutPage() {
           disabled={loading}
           className="w-full bg-[#4a6650] text-white py-3.5 rounded-xl font-bold text-[14px] disabled:opacity-60"
         >
-          {loading ? 'Memproses...' : `Bayar ${fmt(grandTotal)}`}
+          {loading ? 'Menyiapkan pembayaran...' : `Bayar ${fmt(grandTotal)}`}
         </button>
       </div>
     </div>
