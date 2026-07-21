@@ -26,8 +26,11 @@ export async function POST(req: NextRequest) {
     const baseUrl = getBaseUrl(isProduction)
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL
 
+    // DOKU cuma izinkan karakter: a-z A-Z 0-9 . - / + , = _ : ' @ %
+    // Jadi nggak boleh pakai tanda kurung () — diganti pakai strip
+    const sanitizeName = (s: string) => s.replace(/[()]/g, '').replace(/[^a-zA-Z0-9.\-/+,=_:'@% ]/g, '')
     const lineItems = items.map((i: any) => ({
-      name: `${i.name} (${i.size})`.substring(0, 100),
+      name: sanitizeName(`${i.name} - ${i.size}`).substring(0, 100),
       price: i.price,
       quantity: i.quantity,
     }))
