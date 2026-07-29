@@ -5,43 +5,36 @@
 'use client'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { useEffect, useState, useRef, Suspense } from 'react'
+import { useEffect, useState, Suspense } from 'react'
 import { supabase } from '@/lib/supabase'
 import { MobileLayout } from '@/components/layout/MobileLayout'
-import { useCartStore } from '@/store/cartStore'
 
 function SuccessContent() {
   const searchParams = useSearchParams()
   const orderNumber = searchParams.get('order')
   const [order, setOrder] = useState<any>(null)
   const [copied, setCopied] = useState(false)
-  const { clearCart } = useCartStore()
-  const cartCleared = useRef(false)
   const fmt = (n: number) => 'Rp ' + n.toLocaleString('id-ID')
 
   useEffect(() => {
     if (!orderNumber) return
 
-    if (!cartCleared.current) {
-      clearCart()
-      sessionStorage.removeItem('checkout_shipping')
-      sessionStorage.removeItem('checkout_promo')
-      cartCleared.current = true
-    }
-
+    // Ambil data order
     supabase.from('orders').select('*, order_items(*)')
       .eq('order_number', orderNumber).single()
       .then(({ data }) => setOrder(data))
 
-    // Cek status pembayaran langsung ke DOKU (nggak bergantung notifikasi otomatis)
+    // Cek status pembayaran ke Midtrans langsung (backup jika webhook terlambat)
+    // Tunggu 3 detik dulu supaya Midtrans sempat proses
     const timer = setTimeout(async () => {
       try {
-        await fetch(`/api/doku/check-status?order_number=${orderNumber}`)
+        await fetch(`/api/midtrans/check-status?order_id=${orderNumber}`)
+        // Refresh data order setelah cek status
         const { data } = await supabase.from('orders').select('*, order_items(*)')
           .eq('order_number', orderNumber).single()
         if (data) setOrder(data)
       } catch {
-        // Silent fail
+        // Silent fail — webhook akan handle jika polling gagal
       }
     }, 3000)
 
@@ -66,6 +59,7 @@ function SuccessContent() {
           Pesanan Anda sedang kami proses.
         </p>
 
+        {/* Nomor pesanan — tampil besar dan bisa disalin */}
         {orderNumber && (
           <div className="bg-[#e8f0e9] rounded-2xl p-4 w-full mb-4">
             <div className="text-[11px] text-gray-500 mb-1">Simpan nomor pesanan ini untuk melacak status</div>
@@ -79,6 +73,7 @@ function SuccessContent() {
           </div>
         )}
 
+        {/* Info pesanan */}
         {order && (
           <div className="bg-white rounded-xl border border-gray-100 p-3.5 w-full text-left mb-4 space-y-2">
             <div className="flex justify-between text-[12px]">
@@ -100,6 +95,7 @@ function SuccessContent() {
           </div>
         )}
 
+        {/* Pesan info lacak */}
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 w-full mb-4 text-left">
           <div className="text-[12px] text-amber-700 font-semibold mb-0.5">💡 Cara melacak pesanan</div>
           <div className="text-[11px] text-amber-600 leading-relaxed">
