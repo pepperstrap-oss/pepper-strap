@@ -4,7 +4,7 @@
 // Mendukung checkout dengan akun ATAU sebagai tamu (guest checkout)
 // =============================================
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Script from 'next/script'
 import { useCartStore } from '@/store/cartStore'
@@ -20,6 +20,9 @@ export default function CheckoutPage() {
   const [promo, setPromo] = useState<any>(null) // { id, code, discount_amount, free_shipping } atau null
   const [loading, setLoading] = useState(false)
   const [snapReady, setSnapReady] = useState(false)
+  // Kunci anti klik-ganda — dicek langsung (bukan lewat state) supaya nggak kena jeda render,
+  // terutama pas koneksi lambat di HP yang bikin orang keburu nge-tap tombol berkali-kali
+  const submittingRef = useRef(false)
   const [form, setForm] = useState({
     recipient_name: '',
     email: '',
@@ -52,6 +55,7 @@ export default function CheckoutPage() {
   }, [user, profile])
 
   async function handleOrder() {
+    if (submittingRef.current) return // sudah ada proses berjalan, abaikan tap berikutnya
     if (!form.recipient_name || !form.phone || !form.street || !form.postal_code) {
       toast.error('Lengkapi semua data alamat')
       return
@@ -64,6 +68,7 @@ export default function CheckoutPage() {
       toast.error('Sistem pembayaran sedang dimuat, coba lagi sebentar')
       return
     }
+    submittingRef.current = true
     setLoading(true)
     try {
       const shippingAddress = {
@@ -148,11 +153,12 @@ export default function CheckoutPage() {
       window.snap.pay(payData.token, {
         onSuccess: () => { clearCart(); sessionStorage.removeItem('checkout_shipping'); sessionStorage.removeItem('checkout_promo'); router.push(`/sukses?order=${order.order_number}`) },
         onPending: () => { clearCart(); sessionStorage.removeItem('checkout_shipping'); sessionStorage.removeItem('checkout_promo'); router.push(`/sukses?order=${order.order_number}`) },
-        onError: () => toast.error('Pembayaran gagal, silakan coba lagi'),
-        onClose: () => toast('Pembayaran dibatalkan'),
+        onError: () => { submittingRef.current = false; toast.error('Pembayaran gagal, silakan coba lagi') },
+        onClose: () => { submittingRef.current = false; toast('Pembayaran dibatalkan') },
       })
     } catch (err: any) {
       toast.error(err.message || 'Terjadi kesalahan')
+      submittingRef.current = false
     } finally {
       setLoading(false)
     }
