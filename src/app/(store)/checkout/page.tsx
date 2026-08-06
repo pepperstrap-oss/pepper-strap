@@ -1,7 +1,6 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import Script from 'next/script'
 import { useCartStore } from '@/store/cartStore'
 import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/lib/supabase'
@@ -27,14 +26,30 @@ export default function CheckoutPage() {
   const fmt = (n: number) => 'Rp ' + n.toLocaleString('id-ID')
   const isGuest = !user
 
-  // Client key dibaca sekali saat mount — aman di semua device
-  const clientKey = process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY || ''
-
   useEffect(() => {
     const saved = sessionStorage.getItem('checkout_shipping')
     if (!saved) { router.push('/keranjang'); return }
     const parsedShipping = JSON.parse(saved)
     setShipping(parsedShipping)
+
+    // Load Midtrans Snap script secara manual — lebih reliable di semua HP
+    const existingScript = document.getElementById('midtrans-snap')
+    if (!existingScript) {
+      const script = document.createElement('script')
+      script.id = 'midtrans-snap'
+      script.src = 'https://app.midtrans.com/snap/snap.js'
+      script.setAttribute(
+        'data-client-key',
+        process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY || ''
+      )
+      script.onload = () => setSnapReady(true)
+      script.onerror = () =>
+        toast.error('Gagal memuat sistem pembayaran, refresh halaman')
+      document.head.appendChild(script)
+    } else {
+      // Script sudah ada sebelumnya (user balik ke halaman ini)
+      if ((window as any).snap) setSnapReady(true)
+    }
 
     const savedPromo = sessionStorage.getItem('checkout_promo')
     if (savedPromo) {
@@ -50,18 +65,6 @@ export default function CheckoutPage() {
     }))
   }, [user, profile])
 
-  // Cek snap sudah siap setiap 500ms — fallback untuk HP lambat
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (typeof window !== 'undefined' && (window as any).snap) {
-        setSnapReady(true)
-        clearInterval(interval)
-      }
-    }, 500)
-    // Bersihkan interval saat komponen unmount
-    return () => clearInterval(interval)
-  }, [])
-
   async function handleOrder() {
     if (submittingRef.current) return
     if (!form.recipient_name || !form.phone || !form.street || !form.postal_code) {
@@ -72,8 +75,6 @@ export default function CheckoutPage() {
       toast.error('Email wajib diisi untuk konfirmasi pesanan')
       return
     }
-
-    // Cek snap tersedia — lebih toleran untuk HP
     if (typeof window === 'undefined' || !(window as any).snap) {
       toast.error('Sistem pembayaran belum siap, tunggu 2 detik lalu coba lagi')
       return
@@ -171,7 +172,6 @@ export default function CheckoutPage() {
       const payData = await payRes.json()
       if (!payData.token) throw new Error('Gagal membuat transaksi pembayaran')
 
-      // Buka Midtrans Snap — URL sudah hardcode Production
       ;(window as any).snap.pay(payData.token, {
         onSuccess: () => {
           clearCart()
@@ -211,23 +211,15 @@ export default function CheckoutPage() {
   return (
     <div className="max-w-[420px] mx-auto min-h-screen bg-[#f7f5f0] pb-24">
 
-      {/* Script Midtrans — hardcode Production URL, load lebih awal */}
-      <Script
-        src="https://app.midtrans.com/snap/snap.js"
-        data-client-key={clientKey}
-        strategy="beforeInteractive"
-        onReady={() => setSnapReady(true)}
-      />
-
       <div className="bg-[#4a6650] px-4 py-3 flex items-center gap-3">
         <button onClick={() => router.back()} className="text-white text-xl">←</button>
         <span className="text-white font-semibold text-sm">Checkout</span>
       </div>
 
-      {/* Indikator snap belum siap */}
+      {/* Indikator loading sistem pembayaran */}
       {!snapReady && (
         <div className="bg-yellow-50 border-b border-yellow-100 px-4 py-2 text-[11px] text-yellow-700 text-center">
-          Memuat sistem pembayaran...
+          Memuat sistem pembayaran... mohon tunggu
         </div>
       )}
 
@@ -347,12 +339,18 @@ export default function CheckoutPage() {
           />
         </div>
 
+        {/* Tombol bayar — nonaktif sampai Snap siap */}
         <button
           onClick={handleOrder}
-          disabled={loading}
+          disabled={loading || !snapReady}
           className="w-full bg-[#4a6650] text-white py-3.5 rounded-xl font-bold text-[14px] disabled:opacity-60"
         >
-          {loading ? 'Memproses...' : `Bayar ${fmt(grandTotal)}`}
+          {loading
+            ? 'Memproses...'
+            : !snapReady
+              ? 'Memuat sistem pembayaran...'
+              : `Bayar ${fmt(grandTotal)}`
+          }
         </button>
       </div>
     </div>
