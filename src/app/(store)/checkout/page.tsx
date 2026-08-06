@@ -13,7 +13,6 @@ export default function CheckoutPage() {
   const [shipping, setShipping] = useState<any>(null)
   const [promo, setPromo] = useState<any>(null)
   const [loading, setLoading] = useState(false)
-  const [snapReady, setSnapReady] = useState(false)
   const submittingRef = useRef(false)
   const [form, setForm] = useState({
     recipient_name: '',
@@ -31,25 +30,6 @@ export default function CheckoutPage() {
     if (!saved) { router.push('/keranjang'); return }
     const parsedShipping = JSON.parse(saved)
     setShipping(parsedShipping)
-
-    // Load Midtrans Snap script secara manual — lebih reliable di semua HP
-    const existingScript = document.getElementById('midtrans-snap')
-    if (!existingScript) {
-      const script = document.createElement('script')
-      script.id = 'midtrans-snap'
-      script.src = 'https://app.midtrans.com/snap/snap.js'
-      script.setAttribute(
-        'data-client-key',
-        process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY || ''
-      )
-      script.onload = () => setSnapReady(true)
-      script.onerror = () =>
-        toast.error('Gagal memuat sistem pembayaran, refresh halaman')
-      document.head.appendChild(script)
-    } else {
-      // Script sudah ada sebelumnya (user balik ke halaman ini)
-      if ((window as any).snap) setSnapReady(true)
-    }
 
     const savedPromo = sessionStorage.getItem('checkout_promo')
     if (savedPromo) {
@@ -73,10 +53,6 @@ export default function CheckoutPage() {
     }
     if (isGuest && !form.email) {
       toast.error('Email wajib diisi untuk konfirmasi pesanan')
-      return
-    }
-    if (typeof window === 'undefined' || !(window as any).snap) {
-      toast.error('Sistem pembayaran belum siap, tunggu 2 detik lalu coba lagi')
       return
     }
 
@@ -121,6 +97,7 @@ export default function CheckoutPage() {
         orderPayload.user_id = user!.id
       }
 
+      // Simpan order ke Supabase
       const { data: order, error: orderError } = await supabase
         .from('orders')
         .insert(orderPayload)
@@ -129,6 +106,7 @@ export default function CheckoutPage() {
 
       if (orderError) throw orderError
 
+      // Simpan order items
       await supabase.from('order_items').insert(
         items.map(i => ({
           order_id: order.id,
@@ -146,6 +124,7 @@ export default function CheckoutPage() {
         await supabase.rpc('increment_promo_usage', { p_promo_id: promo.id })
       }
 
+      // Buat transaksi Midtrans
       const payRes = await fetch('/api/midtrans/create-transaction', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -170,34 +149,24 @@ export default function CheckoutPage() {
       })
 
       const payData = await payRes.json()
-      if (!payData.token) throw new Error('Gagal membuat transaksi pembayaran')
 
-      ;(window as any).snap.pay(payData.token, {
-        onSuccess: () => {
-          clearCart()
-          sessionStorage.removeItem('checkout_shipping')
-          sessionStorage.removeItem('checkout_promo')
-          router.push(`/sukses?order=${order.order_number}`)
-        },
-        onPending: () => {
-          clearCart()
-          sessionStorage.removeItem('checkout_shipping')
-          sessionStorage.removeItem('checkout_promo')
-          router.push(`/sukses?order=${order.order_number}`)
-        },
-        onError: () => {
-          submittingRef.current = false
-          toast.error('Pembayaran gagal, silakan coba lagi')
-        },
-        onClose: () => {
-          submittingRef.current = false
-          toast('Pembayaran dibatalkan')
-        },
-      })
+      if (!payData.redirect_url) {
+        throw new Error('Gagal membuat transaksi pembayaran')
+      }
+
+      // Bersihkan cart dan session sebelum redirect
+      clearCart()
+      sessionStorage.removeItem('checkout_shipping')
+      sessionStorage.removeItem('checkout_promo')
+
+      // Redirect ke halaman pembayaran Midtrans
+      // Cara ini lebih reliable di HP — QRIS Dinamis GoPay, GoPay,
+      // dan semua Virtual Account akan tampil di halaman Midtrans
+      window.location.href = payData.redirect_url
+
     } catch (err: any) {
-      toast.error(err.message || 'Terjadi kesalahan')
+      toast.error(err.message || 'Terjadi kesalahan, silakan coba lagi')
       submittingRef.current = false
-    } finally {
       setLoading(false)
     }
   }
@@ -216,14 +185,9 @@ export default function CheckoutPage() {
         <span className="text-white font-semibold text-sm">Checkout</span>
       </div>
 
-      {/* Indikator loading sistem pembayaran */}
-      {!snapReady && (
-        <div className="bg-yellow-50 border-b border-yellow-100 px-4 py-2 text-[11px] text-yellow-700 text-center">
-          Memuat sistem pembayaran... mohon tunggu
-        </div>
-      )}
-
       <div className="p-3.5 space-y-3">
+
+        {/* Info guest checkout */}
         {isGuest && (
           <div className="bg-[#e8f0e9] rounded-xl p-3.5 text-[12px] text-[#4a6650] leading-relaxed">
             Anda berbelanja tanpa akun. Isi data di bawah untuk melanjutkan, atau{' '}
@@ -299,7 +263,7 @@ export default function CheckoutPage() {
           </div>
         )}
 
-        {/* Ringkasan */}
+        {/* Ringkasan pesanan */}
         <div className="bg-white rounded-xl border border-gray-100 p-3.5">
           <div className="text-[13px] font-semibold text-[#4a6650] mb-2">📦 Ringkasan Pesanan</div>
           {items.map(i => (
@@ -327,6 +291,21 @@ export default function CheckoutPage() {
           </div>
         </div>
 
+        {/* Info metode pembayaran */}
+        <div className="bg-white rounded-xl border border-gray-100 p-3.5">
+          <div className="text-[13px] font-semibold text-[#4a6650] mb-2">💳 Metode Pembayaran</div>
+          <div className="flex flex-wrap gap-2">
+            {['QRIS GoPay','GoPay','BNI VA','BRI VA','Mandiri VA','BSI VA','CIMB VA','Permata VA'].map(m => (
+              <span key={m} className="text-[10px] bg-[#e8f0e9] text-[#4a6650] px-2 py-1 rounded-lg font-medium">
+                {m}
+              </span>
+            ))}
+          </div>
+          <div className="text-[11px] text-gray-400 mt-2">
+            Pilih metode pembayaran di halaman selanjutnya
+          </div>
+        </div>
+
         {/* Catatan */}
         <div className="bg-white rounded-xl border border-gray-100 p-3.5">
           <label className="text-[12px] text-gray-500 mb-1 block">Catatan (opsional)</label>
@@ -339,19 +318,18 @@ export default function CheckoutPage() {
           />
         </div>
 
-        {/* Tombol bayar — nonaktif sampai Snap siap */}
         <button
           onClick={handleOrder}
-          disabled={loading || !snapReady}
+          disabled={loading}
           className="w-full bg-[#4a6650] text-white py-3.5 rounded-xl font-bold text-[14px] disabled:opacity-60"
         >
-          {loading
-            ? 'Memproses...'
-            : !snapReady
-              ? 'Memuat sistem pembayaran...'
-              : `Bayar ${fmt(grandTotal)}`
-          }
+          {loading ? 'Memproses pesanan...' : `Bayar ${fmt(grandTotal)}`}
         </button>
+
+        <p className="text-center text-[11px] text-gray-400 pb-2">
+          Anda akan diarahkan ke halaman pembayaran Midtrans yang aman
+        </p>
+
       </div>
     </div>
   )
