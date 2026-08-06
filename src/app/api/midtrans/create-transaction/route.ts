@@ -68,6 +68,8 @@ export async function POST(req: NextRequest) {
       // Metode pembayaran yang sudah aktif di akun Midtrans Production
       // QRIS akan ditambahkan kembali setelah pengajuan selesai diproses (1-3 hari kerja)
       enabled_payments: [
+        enabled_payments: [
+        'qris',         // QRIS — sudah aktif
         'gopay',        // GoPay — sudah aktif
         'bni_va',       // BNI Virtual Account — sudah aktif
         'bri_va',       // BRI Virtual Account — sudah aktif
