@@ -1,8 +1,3 @@
-// =============================================
-// src/app/(store)/checkout/page.tsx
-// Halaman Checkout + Alamat + Midtrans + Kode Promo
-// Mendukung checkout dengan akun ATAU sebagai tamu (guest checkout)
-// =============================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
@@ -17,11 +12,9 @@ export default function CheckoutPage() {
   const { items, total, clearCart } = useCartStore()
   const { user, profile } = useAuthStore()
   const [shipping, setShipping] = useState<any>(null)
-  const [promo, setPromo] = useState<any>(null) // { id, code, discount_amount, free_shipping } atau null
+  const [promo, setPromo] = useState<any>(null)
   const [loading, setLoading] = useState(false)
   const [snapReady, setSnapReady] = useState(false)
-  // Kunci anti klik-ganda — dicek langsung (bukan lewat state) supaya nggak kena jeda render,
-  // terutama pas koneksi lambat di HP yang bikin orang keburu nge-tap tombol berkali-kali
   const submittingRef = useRef(false)
   const [form, setForm] = useState({
     recipient_name: '',
@@ -33,6 +26,9 @@ export default function CheckoutPage() {
   })
   const fmt = (n: number) => 'Rp ' + n.toLocaleString('id-ID')
   const isGuest = !user
+
+  // Client key dibaca sekali saat mount — aman di semua device
+  const clientKey = process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY || ''
 
   useEffect(() => {
     const saved = sessionStorage.getItem('checkout_shipping')
@@ -54,8 +50,20 @@ export default function CheckoutPage() {
     }))
   }, [user, profile])
 
+  // Cek snap sudah siap setiap 500ms — fallback untuk HP lambat
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (typeof window !== 'undefined' && (window as any).snap) {
+        setSnapReady(true)
+        clearInterval(interval)
+      }
+    }, 500)
+    // Bersihkan interval saat komponen unmount
+    return () => clearInterval(interval)
+  }, [])
+
   async function handleOrder() {
-    if (submittingRef.current) return // sudah ada proses berjalan, abaikan tap berikutnya
+    if (submittingRef.current) return
     if (!form.recipient_name || !form.phone || !form.street || !form.postal_code) {
       toast.error('Lengkapi semua data alamat')
       return
@@ -64,12 +72,16 @@ export default function CheckoutPage() {
       toast.error('Email wajib diisi untuk konfirmasi pesanan')
       return
     }
-    if (!snapReady) {
-      toast.error('Sistem pembayaran sedang dimuat, coba lagi sebentar')
+
+    // Cek snap tersedia — lebih toleran untuk HP
+    if (typeof window === 'undefined' || !(window as any).snap) {
+      toast.error('Sistem pembayaran belum siap, tunggu 2 detik lalu coba lagi')
       return
     }
+
     submittingRef.current = true
     setLoading(true)
+
     try {
       const shippingAddress = {
         recipient_name: form.recipient_name,
@@ -86,7 +98,6 @@ export default function CheckoutPage() {
       const grandTotal = Math.max(0, subtotal - discountAmount + shippingCost)
       const customerEmail = isGuest ? form.email : user!.email
 
-      // Simpan order ke Supabase — user_id diisi jika login, atau kosong (tamu) dengan data kontak guest_*
       const orderPayload: any = {
         subtotal,
         shipping_cost: shippingCost,
@@ -109,11 +120,14 @@ export default function CheckoutPage() {
         orderPayload.user_id = user!.id
       }
 
-      const { data: order, error: orderError } = await supabase.from('orders').insert(orderPayload).select().single()
+      const { data: order, error: orderError } = await supabase
+        .from('orders')
+        .insert(orderPayload)
+        .select()
+        .single()
 
       if (orderError) throw orderError
 
-      // Simpan order items
       await supabase.from('order_items').insert(
         items.map(i => ({
           order_id: order.id,
@@ -127,19 +141,28 @@ export default function CheckoutPage() {
         }))
       )
 
-      // Tambah pemakaian kode promo (kalau ada yang dipakai)
       if (promo?.id) {
         await supabase.rpc('increment_promo_usage', { p_promo_id: promo.id })
       }
 
-      // Buat token Midtrans
       const payRes = await fetch('/api/midtrans/create-transaction', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           orderId: order.id,
-          items: items.map(i => ({ product_id: i.product.id, name: i.product.name, size: i.size, price: i.product.price, quantity: i.quantity })),
-          customer: { name: form.recipient_name, email: customerEmail, phone: form.phone, address: shippingAddress },
+          items: items.map(i => ({
+            product_id: i.product.id,
+            name: i.product.name,
+            size: i.size,
+            price: i.product.price,
+            quantity: i.quantity,
+          })),
+          customer: {
+            name: form.recipient_name,
+            email: customerEmail,
+            phone: form.phone,
+            address: shippingAddress,
+          },
           shippingCost,
           discountAmount,
         }),
@@ -148,13 +171,28 @@ export default function CheckoutPage() {
       const payData = await payRes.json()
       if (!payData.token) throw new Error('Gagal membuat transaksi pembayaran')
 
-      // Buka Midtrans Snap
-      // @ts-ignore
-      window.snap.pay(payData.token, {
-        onSuccess: () => { clearCart(); sessionStorage.removeItem('checkout_shipping'); sessionStorage.removeItem('checkout_promo'); router.push(`/sukses?order=${order.order_number}`) },
-        onPending: () => { clearCart(); sessionStorage.removeItem('checkout_shipping'); sessionStorage.removeItem('checkout_promo'); router.push(`/sukses?order=${order.order_number}`) },
-        onError: () => { submittingRef.current = false; toast.error('Pembayaran gagal, silakan coba lagi') },
-        onClose: () => { submittingRef.current = false; toast('Pembayaran dibatalkan') },
+      // Buka Midtrans Snap — URL sudah hardcode Production
+      ;(window as any).snap.pay(payData.token, {
+        onSuccess: () => {
+          clearCart()
+          sessionStorage.removeItem('checkout_shipping')
+          sessionStorage.removeItem('checkout_promo')
+          router.push(`/sukses?order=${order.order_number}`)
+        },
+        onPending: () => {
+          clearCart()
+          sessionStorage.removeItem('checkout_shipping')
+          sessionStorage.removeItem('checkout_promo')
+          router.push(`/sukses?order=${order.order_number}`)
+        },
+        onError: () => {
+          submittingRef.current = false
+          toast.error('Pembayaran gagal, silakan coba lagi')
+        },
+        onClose: () => {
+          submittingRef.current = false
+          toast('Pembayaran dibatalkan')
+        },
       })
     } catch (err: any) {
       toast.error(err.message || 'Terjadi kesalahan')
@@ -165,22 +203,20 @@ export default function CheckoutPage() {
   }
 
   if (!shipping) return null
+
   const discountAmount = promo?.discount_amount || 0
   const shippingCost = promo?.free_shipping ? 0 : (shipping.ongkir?.cost || 0)
   const grandTotal = Math.max(0, total() - discountAmount + shippingCost)
-  const isProduction = process.env.NEXT_PUBLIC_MIDTRANS_IS_PRODUCTION === 'true'
-  const snapUrl = isProduction
-    ? 'https://app.midtrans.com/snap/snap.js'
-    : 'https://app.sandbox.midtrans.com/snap/snap.js'
 
   return (
     <div className="max-w-[420px] mx-auto min-h-screen bg-[#f7f5f0] pb-24">
-      {/* Midtrans Snap script */}
+
+      {/* Script Midtrans — hardcode Production URL, load lebih awal */}
       <Script
-        src={snapUrl}
-        data-client-key={process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY}
+        src="https://app.midtrans.com/snap/snap.js"
+        data-client-key={clientKey}
+        strategy="beforeInteractive"
         onReady={() => setSnapReady(true)}
-        strategy="afterInteractive"
       />
 
       <div className="bg-[#4a6650] px-4 py-3 flex items-center gap-3">
@@ -188,12 +224,21 @@ export default function CheckoutPage() {
         <span className="text-white font-semibold text-sm">Checkout</span>
       </div>
 
+      {/* Indikator snap belum siap */}
+      {!snapReady && (
+        <div className="bg-yellow-50 border-b border-yellow-100 px-4 py-2 text-[11px] text-yellow-700 text-center">
+          Memuat sistem pembayaran...
+        </div>
+      )}
+
       <div className="p-3.5 space-y-3">
-        {/* Info guest checkout */}
         {isGuest && (
           <div className="bg-[#e8f0e9] rounded-xl p-3.5 text-[12px] text-[#4a6650] leading-relaxed">
             Anda berbelanja tanpa akun. Isi data di bawah untuk melanjutkan, atau{' '}
-            <button onClick={() => router.push('/auth/masuk?redirect=/checkout')} className="font-bold underline">
+            <button
+              onClick={() => router.push('/auth/masuk?redirect=/checkout')}
+              className="font-bold underline"
+            >
               masuk ke akun
             </button>{' '}
             agar bisa melacak pesanan lebih mudah nanti.
@@ -202,10 +247,14 @@ export default function CheckoutPage() {
 
         {/* Alamat */}
         <div className="bg-white rounded-xl border border-gray-100 p-3.5">
-          <div className="text-[13px] font-semibold text-[#4a6650] mb-3">📍 Data Pemesan & Alamat Pengiriman</div>
+          <div className="text-[13px] font-semibold text-[#4a6650] mb-3">
+            📍 Data Pemesan & Alamat Pengiriman
+          </div>
           {[
             { label: 'Nama Penerima', key: 'recipient_name', placeholder: 'Nama lengkap penerima', type: 'text' },
-            ...(isGuest ? [{ label: 'Email', key: 'email', placeholder: 'email@example.com (untuk konfirmasi pesanan)', type: 'email' }] : []),
+            ...(isGuest
+              ? [{ label: 'Email', key: 'email', placeholder: 'email@example.com', type: 'email' }]
+              : []),
             { label: 'No. HP', key: 'phone', placeholder: '08xxxxxxxxxx', type: 'text' },
             { label: 'Alamat Lengkap', key: 'street', placeholder: 'Nama jalan, no. rumah, RT/RW', type: 'text' },
             { label: 'Kode Pos', key: 'postal_code', placeholder: '12345', type: 'text' },
@@ -230,17 +279,22 @@ export default function CheckoutPage() {
         <div className="bg-white rounded-xl border border-gray-100 p-3.5">
           <div className="text-[13px] font-semibold text-[#4a6650] mb-2">🚚 Pengiriman</div>
           <div className="flex justify-between text-[12px]">
-            <span className="text-gray-600">{shipping.ongkir?.courier} {shipping.ongkir?.service}</span>
+            <span className="text-gray-600">
+              {shipping.ongkir?.courier} {shipping.ongkir?.service}
+            </span>
             <span className="font-semibold">
               {promo?.free_shipping
                 ? <span className="text-[#4a6650]">Gratis (promo)</span>
-                : fmt(shipping.ongkir?.cost || 0)}
+                : fmt(shipping.ongkir?.cost || 0)
+              }
             </span>
           </div>
-          <div className="text-[11px] text-gray-400 mt-0.5">Estimasi {shipping.ongkir?.etd} hari kerja</div>
+          <div className="text-[11px] text-gray-400 mt-0.5">
+            Estimasi {shipping.ongkir?.etd} hari kerja
+          </div>
         </div>
 
-        {/* Promo yang dipakai */}
+        {/* Promo */}
         {promo && (
           <div className="bg-white rounded-xl border border-gray-100 p-3.5">
             <div className="flex items-center justify-between">
@@ -253,11 +307,14 @@ export default function CheckoutPage() {
           </div>
         )}
 
-        {/* Ringkasan produk */}
+        {/* Ringkasan */}
         <div className="bg-white rounded-xl border border-gray-100 p-3.5">
           <div className="text-[13px] font-semibold text-[#4a6650] mb-2">📦 Ringkasan Pesanan</div>
           {items.map(i => (
-            <div key={`${i.product.id}-${i.size}`} className="flex justify-between text-[12px] text-gray-600 mb-1.5">
+            <div
+              key={`${i.product.id}-${i.size}`}
+              className="flex justify-between text-[12px] text-gray-600 mb-1.5"
+            >
               <span>{i.product.name} ({i.size}) x{i.quantity}</span>
               <span>{fmt(i.product.price * i.quantity)}</span>
             </div>
@@ -286,7 +343,7 @@ export default function CheckoutPage() {
             onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
             placeholder="Catatan untuk penjual..."
             rows={2}
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[12px] text-gray-800 bg-white resize-none outline-none focus:border-[#4a6650] text-gray-800 bg-white"
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[12px] text-gray-800 bg-white resize-none outline-none focus:border-[#4a6650]"
           />
         </div>
 
