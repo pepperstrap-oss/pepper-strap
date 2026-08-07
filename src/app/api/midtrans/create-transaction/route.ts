@@ -65,17 +65,16 @@ export async function POST(req: NextRequest) {
           country_code: 'IDN',
         },
       },
-      // Metode pembayaran yang sudah aktif di akun Midtrans Production
-      // QRIS akan ditambahkan kembali setelah pengajuan selesai diproses (1-3 hari kerja)
+      // Semua metode pembayaran aktif — QRIS Statis & Dinamis sudah aktif per 6 Agustus 2026
       enabled_payments: [
-        'qris',         // QRIS — sudah aktif
-        'gopay',        // GoPay — sudah aktif
-        'bni_va',       // BNI Virtual Account — sudah aktif
-        'bri_va',       // BRI Virtual Account — sudah aktif
-        'mandiri_va',   // Mandiri Virtual Account — sudah aktif
-        'cimb_va',      // CIMB Niaga Virtual Account — sudah aktif
-        'bsi_va',       // BSI Virtual Account — sudah aktif
-        'permata_va',   // PermataBank Virtual Account — sudah aktif
+        'other_qris',   // QRIS Statis GoPay — scan QR langsung
+        'gopay',        // QRIS Dinamis GoPay + GoPay app
+        'bni_va',       // BNI Virtual Account
+        'bri_va',       // BRI Virtual Account
+        'mandiri_va',   // Mandiri Virtual Account
+        'cimb_va',      // CIMB Niaga Virtual Account
+        'bsi_va',       // BSI Virtual Account
+        'permata_va',   // PermataBank Virtual Account
       ],
       callbacks: {
         finish: `${process.env.NEXT_PUBLIC_SITE_URL}/sukses?order=${orderId}`,
