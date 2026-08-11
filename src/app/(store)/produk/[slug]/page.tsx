@@ -17,9 +17,9 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
     .single()
   if (!product) notFound()
   return (
-    <div className="max-w-[420px] mx-auto min-h-screen bg-white pb-24">
+    <div className="max-w-[420px] md:max-w-5xl mx-auto min-h-screen bg-white pb-24">
       <ProductDetailClient product={product} />
-      <div className="px-4">
+      <div className="px-4 md:px-6 lg:px-10 md:mt-4">
         <ProductReviews productId={product.id} productSlug={product.slug} />
       </div>
     </div>
