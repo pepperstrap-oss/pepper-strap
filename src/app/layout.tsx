@@ -3,9 +3,8 @@ import { Inter } from 'next/font/google'
 import './globals.css'
 import { Toaster } from 'react-hot-toast'
 import { AuthProvider } from '@/components/layout/AuthProvider'
-
+import { PageViewTracker } from '@/components/analytics/PageViewTracker'
 const inter = Inter({ subsets: ['latin'] })
-
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'),
   title: 'Pepper Strap — Handmade Leather Watch Strap',
@@ -17,12 +16,12 @@ export const metadata: Metadata = {
     images: ['/og-image.jpg'],
   },
 }
-
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="id">
       <body className={inter.className}>
         <AuthProvider>
+          <PageViewTracker />
           {children}
           <Toaster
             position="bottom-center"
