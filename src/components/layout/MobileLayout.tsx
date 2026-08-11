@@ -2,6 +2,7 @@
 // src/components/layout/MobileLayout.tsx
 // Layout utama dengan Navbar + BottomNav
 // Responsive: tampilan HP tetap sama persis, di layar lebar (PC/tablet) jadi navbar horizontal
+// dan konten melebar penuh (edge-to-edge) dengan padding menyesuaikan
 // =============================================
 'use client'
 import Link from 'next/link'
@@ -28,7 +29,7 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
     <div className="min-h-screen bg-[#f7f5f0] relative">
       {/* Top Navbar */}
       <header className="bg-[#4a6650] sticky top-0 z-50">
-        <div className="max-w-[420px] md:max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+        <div className="max-w-[420px] md:max-w-none w-full mx-auto px-4 md:px-8 lg:px-12 py-3 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2 flex-shrink-0">
             <div className="w-8 h-8 rounded-full overflow-hidden bg-white flex items-center justify-center">
               <img src="/logo-pepper.jpg" alt="Pepper Strap" className="w-full h-full object-cover" />
@@ -65,8 +66,8 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
-      {/* Page Content */}
-      <main className="max-w-[420px] md:max-w-6xl mx-auto">{children}</main>
+      {/* Page Content — lebar penuh di layar besar, dengan padding kiri-kanan menyesuaikan */}
+      <main className="max-w-[420px] md:max-w-none w-full mx-auto px-0 md:px-8 lg:px-12">{children}</main>
 
       {/* Bottom Navigation — cuma tampil di HP, disembunyikan di layar lebar */}
       <nav className="md:hidden fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[420px] bg-white border-t border-gray-100 flex justify-around py-2 z-50">
