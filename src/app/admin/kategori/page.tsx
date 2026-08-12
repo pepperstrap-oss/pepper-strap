@@ -25,6 +25,7 @@ export default function AdminKategoriPage() {
   const [imageFile, setImageFile] = useState<File | null>(null)
   const [imagePreview, setImagePreview] = useState('')
   const [saving, setSaving] = useState(false)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
   async function load() {
@@ -99,11 +100,24 @@ export default function AdminKategoriPage() {
   }
 
   async function handleDelete(id: string, name: string) {
-    if (!confirm(`Hapus kategori "${name}"? Produk dalam kategori ini tidak akan ikut terhapus.`)) return
-    const { error } = await supabase.from('categories').delete().eq('id', id)
-    if (error) { toast.error('Gagal menghapus'); return }
-    toast.success('Kategori dihapus')
-    load()
+    if (!confirm(`Hapus kategori "${name}"? Produk dalam kategori ini tidak akan ikut terhapus, cuma jadi "tanpa kategori".`)) return
+    setDeletingId(id)
+    try {
+      // Lepas dulu semua produk yang masih terkait kategori ini — biar nggak ada yang "nyantol"
+      // dan menghalangi proses hapus kategori (foreign key constraint di database)
+      const { error: unlinkError } = await supabase.from('products').update({ category_id: null }).eq('category_id', id)
+      if (unlinkError) throw unlinkError
+
+      const { error } = await supabase.from('categories').delete().eq('id', id)
+      if (error) throw error
+
+      toast.success('Kategori dihapus')
+      load()
+    } catch (err: any) {
+      toast.error(err.message || 'Gagal menghapus kategori')
+    } finally {
+      setDeletingId(null)
+    }
   }
 
   return (
@@ -200,8 +214,13 @@ export default function AdminKategoriPage() {
               <div className="flex flex-col gap-1.5 flex-shrink-0">
                 <button onClick={() => openForm(cat)}
                   className="text-[10px] border border-[#4a6650] text-[#4a6650] px-2 py-1 rounded-lg">Edit</button>
-                <button onClick={() => handleDelete(cat.id, cat.name)}
-                  className="text-[10px] border border-red-200 text-red-500 px-2 py-1 rounded-lg">Hapus</button>
+                <button
+                  onClick={() => handleDelete(cat.id, cat.name)}
+                  disabled={deletingId === cat.id}
+                  className="text-[10px] border border-red-200 text-red-500 px-2 py-1 rounded-lg disabled:opacity-60"
+                >
+                  {deletingId === cat.id ? '...' : 'Hapus'}
+                </button>
               </div>
             </div>
           ))}
