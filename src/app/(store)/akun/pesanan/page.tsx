@@ -1,13 +1,16 @@
 // =============================================
 // src/app/(store)/akun/pesanan/page.tsx
-// Daftar pesanan pelanggan
+// Daftar pesanan pelanggan — bisa lanjut bayar lagi kalau belum dibayar
 // =============================================
 'use client'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Script from 'next/script'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
 import { MobileLayout } from '@/components/layout/MobileLayout'
+import toast from 'react-hot-toast'
+
 const STATUS_LABEL: Record<string, { label: string; color: string }> = {
   pending: { label: 'Menunggu Bayar', color: 'bg-yellow-100 text-yellow-700' },
   paid: { label: 'Dibayar', color: 'bg-blue-100 text-blue-700' },
@@ -16,25 +19,89 @@ const STATUS_LABEL: Record<string, { label: string; color: string }> = {
   delivered: { label: 'Selesai', color: 'bg-green-100 text-green-700' },
   cancelled: { label: 'Dibatalkan', color: 'bg-red-100 text-red-700' },
 }
+
 export default function MyOrdersPage() {
   const router = useRouter()
   const { user } = useAuthStore()
   const [orders, setOrders] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [snapReady, setSnapReady] = useState(false)
+  const [payingOrderId, setPayingOrderId] = useState<string | null>(null)
   const fmt = (n: number) => 'Rp ' + n.toLocaleString('id-ID')
+
   useEffect(() => {
     if (!user) { setLoading(false); return }
-    supabase.from('orders').select('*, order_items(*)').eq('user_id', user.id)
-      .order('created_at', { ascending: false })
-      .then(({ data }) => { setOrders(data || []); setLoading(false) })
+    loadOrders()
   }, [user])
+
+  async function loadOrders() {
+    const { data } = await supabase.from('orders').select('*, order_items(*)').eq('user_id', user!.id)
+      .order('created_at', { ascending: false })
+    setOrders(data || [])
+    setLoading(false)
+  }
 
   function openOrder(orderNumber: string) {
     router.push(`/lacak?nomor=${encodeURIComponent(orderNumber)}&auto=1`)
   }
 
+  // Lanjut bayar pesanan yang masih "Menunggu Bayar" — bikin token Midtrans baru buat pesanan yang sama
+  async function payAgain(order: any, e: React.MouseEvent) {
+    e.stopPropagation()
+    if (!snapReady) {
+      toast.error('Sistem pembayaran sedang dimuat, coba lagi sebentar')
+      return
+    }
+    setPayingOrderId(order.id)
+    try {
+      const payRes = await fetch('/api/midtrans/create-transaction', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          orderId: order.id,
+          items: (order.order_items || []).map((i: any) => ({
+            product_id: i.product_id, name: i.product_name, size: i.size, price: i.price, quantity: i.quantity,
+          })),
+          customer: {
+            name: order.shipping_address?.recipient_name,
+            email: order.guest_email || user!.email,
+            phone: order.shipping_address?.phone,
+            address: order.shipping_address,
+          },
+          shippingCost: order.shipping_cost,
+          discountAmount: order.discount_amount || 0,
+        }),
+      })
+      const payData = await payRes.json()
+      if (!payData.token) throw new Error(payData.error || 'Gagal membuat ulang transaksi pembayaran')
+
+      // @ts-ignore
+      window.snap.pay(payData.token, {
+        onSuccess: () => { toast.success('Pembayaran berhasil!'); router.push(`/sukses?order=${order.order_number}`) },
+        onPending: () => { toast('Menunggu pembayaran...'); router.push(`/sukses?order=${order.order_number}`) },
+        onError: () => toast.error('Pembayaran gagal, silakan coba lagi'),
+        onClose: () => toast('Ditutup — pesanan masih tersimpan, bisa lanjut bayar lagi kapan saja'),
+      })
+    } catch (err: any) {
+      toast.error(err.message || 'Terjadi kesalahan')
+    } finally {
+      setPayingOrderId(null)
+    }
+  }
+
+  const isProduction = process.env.NEXT_PUBLIC_MIDTRANS_IS_PRODUCTION === 'true'
+  const snapUrl = isProduction
+    ? 'https://app.midtrans.com/snap/snap.js'
+    : 'https://app.sandbox.midtrans.com/snap/snap.js'
+
   return (
     <MobileLayout>
+      <Script
+        src={snapUrl}
+        data-client-key={process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY}
+        onReady={() => setSnapReady(true)}
+        strategy="afterInteractive"
+      />
       <div className="bg-[#4a6650] px-4 py-3 flex items-center gap-3">
         <button onClick={() => router.back()} className="text-white text-xl">←</button>
         <span className="text-white font-semibold text-sm">Pesanan Saya</span>
@@ -49,11 +116,14 @@ export default function MyOrdersPage() {
           </div>
         ) : orders.map(order => {
           const s = STATUS_LABEL[order.status] || { label: order.status, color: 'bg-gray-100 text-gray-600' }
+          const needsPayment = order.status === 'pending' && order.payment_status === 'unpaid'
           return (
-            <button
+            <div
               key={order.id}
               onClick={() => openOrder(order.order_number)}
-              className="w-full text-left bg-white rounded-xl border border-gray-100 p-3.5 mb-3 active:bg-gray-50 transition-colors"
+              className={`w-full text-left bg-white rounded-xl border p-3.5 mb-3 active:bg-gray-50 transition-colors cursor-pointer ${
+                needsPayment ? 'border-yellow-300' : 'border-gray-100'
+              }`}
             >
               <div className="flex justify-between items-start mb-2">
                 <div>
@@ -62,7 +132,9 @@ export default function MyOrdersPage() {
                     {new Date(order.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}
                   </div>
                 </div>
-                <span className={`text-[10px] font-semibold px-2 py-1 rounded-full ${s.color}`}>{s.label}</span>
+                <span className={`text-[10px] font-semibold px-2 py-1 rounded-full ${s.color}`}>
+                  {needsPayment ? '⏳ Perlu Dibayar' : s.label}
+                </span>
               </div>
               <div className="text-[11px] text-gray-500 mb-2">
                 {order.order_items?.length} produk · {order.courier} {order.courier_service}
@@ -76,7 +148,18 @@ export default function MyOrdersPage() {
                   <span className="text-gray-300 text-[13px]">›</span>
                 </div>
               </div>
-            </button>
+
+              {/* Tombol bayar lagi — cuma muncul kalau pesanan masih menunggu pembayaran */}
+              {needsPayment && (
+                <button
+                  onClick={e => payAgain(order, e)}
+                  disabled={payingOrderId === order.id}
+                  className="w-full mt-2.5 bg-[#4a6650] text-white py-2 rounded-lg font-semibold text-[12px] disabled:opacity-60"
+                >
+                  {payingOrderId === order.id ? 'Menyiapkan...' : '💳 Bayar Sekarang'}
+                </button>
+              )}
+            </div>
           )
         })}
       </div>
