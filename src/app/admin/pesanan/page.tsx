@@ -61,6 +61,8 @@ export default function AdminOrdersPage() {
       ) : orders.map(order => {
         const a = order.shipping_address
         const isOpen = expandedId === order.id
+        const items = order.order_items || []
+        const MAX_THUMBS = 4
         return (
           <div key={order.id} className="bg-white rounded-xl border border-gray-100 mb-3 overflow-hidden">
             {/* Header — klik untuk buka/tutup detail */}
@@ -88,10 +90,29 @@ export default function AdminOrdersPage() {
               <div className="text-[11px] text-gray-500 mb-1">
                 📍 {a?.city || '-'}, {a?.province || ''}
               </div>
-              <div className="text-[11px] text-gray-500">
+              <div className="text-[11px] text-gray-500 mb-2">
                 🚚 {order.courier} {order.courier_service} · Est. {order.estimated_days} hari
               </div>
-              <div className="text-[10px] text-[#4a6650] mt-2 font-semibold">
+
+              {/* Foto produk — langsung kelihatan tanpa perlu buka detail, biar gampang pas mau packing */}
+              {items.length > 0 && (
+                <div className="flex items-center gap-1.5 mb-1">
+                  {items.slice(0, MAX_THUMBS).map((i: any) => (
+                    <div key={i.id} className="w-9 h-9 rounded-lg overflow-hidden bg-[#e8f0e9] flex-shrink-0 flex items-center justify-center border border-gray-100" title={`${i.product_name} (${i.size}) x${i.quantity}`}>
+                      {i.product_image
+                        ? <img src={i.product_image} alt={i.product_name} className="w-full h-full object-cover" />
+                        : <span className="text-sm">📦</span>}
+                    </div>
+                  ))}
+                  {items.length > MAX_THUMBS && (
+                    <div className="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0">
+                      <span className="text-[10px] font-semibold text-gray-500">+{items.length - MAX_THUMBS}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="text-[10px] text-[#4a6650] mt-1 font-semibold">
                 {isOpen ? '▲ Sembunyikan detail' : '▼ Lihat detail lengkap & alamat'}
               </div>
             </div>
@@ -118,11 +139,19 @@ export default function AdminOrdersPage() {
 
                 <div>
                   <div className="text-[10px] text-gray-400 uppercase font-semibold mb-1.5">Item Pesanan</div>
-                  <div className="space-y-1">
-                    {order.order_items?.map((i: any) => (
-                      <div key={i.id} className="flex justify-between text-[11px] text-gray-600">
-                        <span>{i.product_name} ({i.size}) x{i.quantity}</span>
-                        <span className="text-gray-800 font-medium">{fmt(i.subtotal)}</span>
+                  <div className="space-y-2">
+                    {items.map((i: any) => (
+                      <div key={i.id} className="flex items-center gap-2.5">
+                        <div className="w-11 h-11 rounded-lg overflow-hidden bg-[#e8f0e9] flex-shrink-0 flex items-center justify-center border border-gray-100">
+                          {i.product_image
+                            ? <img src={i.product_image} alt={i.product_name} className="w-full h-full object-cover" />
+                            : <span className="text-base">📦</span>}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-[11px] font-medium text-gray-700 truncate">{i.product_name}</div>
+                          <div className="text-[10px] text-gray-400">Ukuran {i.size} · x{i.quantity}</div>
+                        </div>
+                        <span className="text-[11px] text-gray-800 font-semibold flex-shrink-0">{fmt(i.subtotal)}</span>
                       </div>
                     ))}
                   </div>
